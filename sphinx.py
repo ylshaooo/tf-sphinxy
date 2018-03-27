@@ -208,7 +208,7 @@ class SphinxModel(object):
 
     def training_init(self, nEpochs=10, epoch_size=1000, save_step=500, load=None):
         """
-        Initialize the training
+        Initialize the training.
         :param nEpochs: Number of epochs to train
         :param epoch_size: Size of one epoch
         :param save_step: Step to save 'train' summary (has to be lower than epoch size)
