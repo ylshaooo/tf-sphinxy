@@ -4,8 +4,8 @@ import sys
 import time
 
 import numpy as np
-import tensorflow as tf
-import tensorflow.contrib.slim as slim
+
+from utils import *
 
 
 class SphinxModel(object):
@@ -15,7 +15,7 @@ class SphinxModel(object):
                       'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                       'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
 
-    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, batch_size=16, drop_rate=0.2,
+    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, batch_size=16, drop_rate=0.5,
                  learning_rate=1e-3, decay=0.96, decay_step=2000, dataset=None, training=True, w_summary=True,
                  logdir_train=None, logdir_test=None, w_loss=False, points=default_points, name='sphinx'):
 
@@ -234,7 +234,7 @@ class SphinxModel(object):
         self.point_error = []
         for i in range(len(self.points)):
             self.point_error.append(
-                self._error(
+                error(
                     self.output[:, self.nStacks - 1, :, :, i],
                     self.gt_maps[:, self.nStacks - 1, :, :, i],
                     self.batch_size
@@ -262,167 +262,48 @@ class SphinxModel(object):
 
     def _graph_sphinx(self):
         with tf.name_scope('model'):
-            with tf.name_scope('preprocessing'):
-                pad = tf.pad(self.img, [[0, 0], [2, 2], [2, 2], [0, 0]], name='pad')
-                conv1 = self._conv_bn_relu(pad, filters=64, kernel_size=6, strides=2, name='conv_256_to_128')
-                r1 = self._residual(conv1, out_dim=128, name='r1')
-                pool1 = tf.contrib.layers.max_pool2d(r1, [2, 2], [2, 2])
-                r2 = self._residual(pool1, out_dim=int(self.nFeats / 2), name='r2')
-                r3 = self._residual(r2, out_dim=self.nFeats, name='r3')
-            # Storage Table
-            hg = [None] * self.nStacks
-            ll = [None] * self.nStacks
-            ll_ = [None] * self.nStacks
-            drop = [None] * self.nStacks
-            out = [None] * self.nStacks
-            out_ = [None] * self.nStacks
-            sum_ = [None] * self.nStacks
+            pass
 
+    def _graph_hourglass(self):
+        with tf.name_scope('hourglass'):
+            net = conv_layer(self.img, 64, 6, 2, 'conv1')
+            net = batch_norm(net, self.training)
+            net = bottleneck(net, 128, 32, 1, self.training, name='res1')
+            net = max_pool(net, 2, 2, 'max_pool')
+            net = bottleneck(net, int(self.nFeats / 2), stride=1, training=self.training, name='res2')
+            net = bottleneck(net, self.nFeats, stride=1, training=self.training, name='res3')
+
+            final_out = []
             with tf.name_scope('stacks'):
                 with tf.name_scope('stage_0'):
-                    hg[0] = self._hourglass(r3, self.nLow, self.nFeats, 'hourglass')
-                    drop[0] = tf.layers.dropout(hg[0], rate=self.dropout_rate, training=self.training,
-                                                name='dropout')
-                    ll[0] = self._conv_bn_relu(drop[0], self.nFeats, 1, 1, name='conv')
-                    ll_[0] = self._conv(ll[0], self.nFeats, 1, 1, 'll')
-                    out[0] = self._conv(ll[0], self.out_dim, 1, 1, 'out')
-                    out_[0] = self._conv(out[0], self.nFeats, 1, 1, 'out_')
-                    sum_[0] = tf.add_n([out_[0], r3, ll_[0]], name='merge')
+                    hg = hourglass(net, self.nLow, self.nFeats, 'hourglass')
+                    drop = dropout(hg, self.dropout_rate, self.training, 'dropout')
+                    ll = conv_layer(drop, self.nFeats, 1, 1)
+                    ll = batch_norm(ll, self.training)
+                    ll_ = conv_layer(ll, self.nFeats, 1, 1, 'll')
+                    out = conv_layer(ll, self.out_dim, 1, 1, 'out')
+                    out_ = conv_layer(out, self.nFeats, 1, 1, 'out_')
+                    sum_ = tf.add_n([out_, net, ll_], name='merge')
+                    final_out.append(out)
                 for i in range(1, self.nStacks - 1):
                     with tf.name_scope('stage_' + str(i)):
-                        hg[i] = self._hourglass(sum_[i - 1], self.nLow, self.nFeats, 'hourglass')
-                        drop[i] = tf.layers.dropout(hg[i], rate=self.dropout_rate, training=self.training,
-                                                    name='dropout')
-                        ll[i] = self._conv_bn_relu(drop[i], self.nFeats, 1, 1, name='conv')
-                        ll_[i] = self._conv(ll[i], self.nFeats, 1, 1, 'll')
-                        out[i] = self._conv(ll[i], self.out_dim, 1, 1, 'out')
-                        out_[i] = self._conv(out[i], self.nFeats, 1, 1, 'out_')
-                        sum_[i] = tf.add_n([out_[i], sum_[i - 1], ll_[0]], name='merge')
+                        hg = hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
+                        drop = dropout(hg, self.dropout_rate, self.training, 'dropout')
+                        ll = conv_layer(drop, self.nFeats, 1, 1, 'conv')
+                        ll = batch_norm(ll, self.training)
+                        ll_ = conv_layer(ll, self.nFeats, 1, 1, 'll')
+                        out = conv_layer(ll, self.out_dim, 1, 1, 'out')
+                        out_[i] = conv_layer(out, self.nFeats, 1, 1, 'out_')
+                        sum_ = tf.add_n([out_, sum_, ll_], name='merge')
+                        final_out.append(out)
                 with tf.name_scope('stage_' + str(self.nStacks - 1)):
-                    hg[self.nStacks - 1] = self._hourglass(sum_[self.nStacks - 2], self.nLow, self.nFeats, 'hourglass')
-                    drop[self.nStacks - 1] = tf.layers.dropout(hg[self.nStacks - 1], rate=self.dropout_rate,
-                                                               training=self.training, name='dropout')
-                    ll[self.nStacks - 1] = self._conv_bn_relu(drop[self.nStacks - 1], self.nFeats, 1, 1, 'conv')
-                    out[self.nStacks - 1] = self._conv(ll[self.nStacks - 1], self.out_dim, 1, 1, 'out')
-            return tf.stack(out, axis=1, name='final_output')
-
-    def _conv(self, inputs, filters, kernel_size=1, strides=1, name='conv'):
-        """
-        Spatial Convolution (CONV2D)
-        :param inputs: Input tensor (data type: NHWC)
-        :param filters: Number of filters (channels)
-        :param kernel_size: Size of kernel
-        :param strides: Stride
-        :param name: Name of the block
-        :return: Output tensor (convolved input)
-        """
-        with tf.name_scope(name):
-            # Kernel for convolution, Xavier Initialisation
-            kernel = tf.Variable(tf.contrib.layers.xavier_initializer(uniform=False)(
-                [kernel_size, kernel_size, inputs.get_shape().as_list()[3], filters]), name='weights')
-            conv = tf.nn.conv2d(inputs, kernel, [1, strides, strides, 1], padding='SAME', data_format='NHWC')
-            if self.w_summary:
-                with tf.device(self.cpu):
-                    tf.summary.histogram('weights_summary', kernel, collections=['weight'])
-            return conv
-
-    def _conv_bn_relu(self, inputs, filters, kernel_size=1, strides=1, name='conv_bn_relu'):
-        """
-        Spatial Convolution (CONV2D) + BatchNormalization + ReLU Activation
-        :param inputs: Input tensor (data type: NHWC)
-        :param filters: Number of filters (channels)
-        :param kernel_size: Size of kernel
-        :param strides: Stride
-        :param name: Name of the block
-        :return: Output tensor
-        """
-        with tf.name_scope(name):
-            kernel = tf.Variable(tf.contrib.layers.xavier_initializer(uniform=False)(
-                [kernel_size, kernel_size, inputs.get_shape().as_list()[3], filters]), name='weights'
-            )
-            conv = tf.nn.conv2d(inputs, kernel, [1, strides, strides, 1], padding='SAME', data_format='NHWC')
-            norm = tf.contrib.layers.batch_norm(conv, 0.9, epsilon=1e-5, activation_fn=tf.nn.relu,
-                                                is_training=self.training)
-            if self.w_summary:
-                with tf.device(self.cpu):
-                    tf.summary.histogram('weights_summary', kernel, collections=['weight'])
-            return norm
-
-    def _conv_block(self, inputs, out_dim, name='conv_block'):
-        """
-        Convolutional Block
-        :param inputs: Input tensor
-        :param out_dim: Desired output number of channel
-        :param name: Name of the block
-        :return: Output tensor
-        """
-        with tf.name_scope(name):
-            with tf.name_scope('norm_1'):
-                norm_1 = tf.contrib.layers.batch_norm(inputs, 0.9, epsilon=1e-5, activation_fn=tf.nn.relu,
-                                                      is_training=self.training)
-                conv_1 = self._conv(norm_1, int(out_dim / 2), 1, 1, name='conv')
-            with tf.name_scope('norm_2'):
-                norm_2 = tf.contrib.layers.batch_norm(conv_1, 0.9, epsilon=1e-5, activation_fn=tf.nn.relu,
-                                                      is_training=self.training)
-                pad = tf.pad(norm_2, np.array([[0, 0], [1, 1], [1, 1], [0, 0]]), name='pad')
-                conv_2 = self._conv(pad, int(out_dim / 2), 3, 1, name='conv')
-            with tf.name_scope('norm_3'):
-                norm_3 = tf.contrib.layers.batch_norm(conv_2, 0.9, epsilon=1e-5, activation_fn=tf.nn.relu,
-                                                      is_training=self.training)
-                conv_3 = self._conv(norm_3, int(out_dim), 1, 1, name='conv')
-            return conv_3
-
-    def _skip_layer(self, inputs, out_dim, name='skip_layer'):
-        """
-        :param inputs: Input Tensor
-        :param out_dim: Desired output number of channel
-        :param name: Name of the block
-        :return: Tensor of shape (None, inputs.height, inputs.width, out_dim)
-        """
-        with tf.name_scope(name):
-            if inputs.get_shape().as_list()[3] == out_dim:
-                return inputs
-            else:
-                conv = self._conv(inputs, out_dim, kernel_size=1, strides=1, name='conv')
-                return conv
-
-    def _residual(self, inputs, out_dim, name='residual_block'):
-        """
-        Residual Unit
-        :param inputs: Input tensor
-        :param out_dim: Number of output features (channels)
-        :param name: Name of the block
-        :return: Output tensor
-        """
-        with tf.name_scope(name):
-            conv_block = self._conv_block(inputs, out_dim)
-            skip_layer = self._skip_layer(inputs, out_dim)
-            return tf.add_n([conv_block, skip_layer], name='residual_block')
-
-    def _hourglass(self, inputs, n, out_dim, name='hourglass'):
-        """
-        Hourglass Module
-        :param inputs: Input tensor
-        :param n: Number of down-sampling step
-        :param out_dim: Number of output features (channels)
-        :param name: Name of the block
-        :return: Output tensor
-        """
-        with tf.name_scope(name):
-            # Upper Branch
-            up_1 = self._residual(inputs, out_dim, name='up_1')
-            # Lower Branch
-            low_ = tf.contrib.layers.max_pool2d(inputs, [2, 2], [2, 2])
-            low_1 = self._residual(low_, out_dim, name='low_1')
-
-            if n > 0:
-                low_2 = self._hourglass(low_1, n - 1, out_dim, name='low_2')
-            else:
-                low_2 = self._residual(low_1, out_dim, name='low_2')
-
-            low_3 = self._residual(low_2, out_dim, name='low_3')
-            up_2 = tf.image.resize_bilinear(low_3, tf.shape(low_3)[1:3] * 2, name='upsampling')
-            return tf.add_n([up_2, up_1], name='out_hg')
+                    hg = hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
+                    drop = dropout(hg, self.dropout_rate, self.training, 'dropout')
+                    ll = conv_layer(drop, self.nFeats, 1, 1, 'conv')
+                    ll = batch_norm(ll, self.training)
+                    out = conv_layer(ll, self.out_dim, 1, 1, 'out')
+                    final_out.append(out)
+            return tf.stack(final_out, axis=1, name='output')
 
     def _argmax(self, tensor):
         """
@@ -434,19 +315,31 @@ class SphinxModel(object):
         arg_max = tf.argmax(reshape, 0)
         return arg_max // tensor.get_shape().as_list()[0], arg_max % tensor.get_shape().as_list()[0]
 
-    def _error(self, pred, gt_maps, num_image):
-        """
-        Given a Prediction batch and a Ground Truth batch, returns normalized error distance.
-        :param pred: Prediction batch (shape = num_image x 64 x 64)
-        :param gt_maps: Ground truth batch (shape = num_image x 64 x 64)
-        :param num_image: (int) Number of images in batch
-        :return: (float)
-        """
-        for i in range(num_image):
-            pass
+    def _graph_resnet(self, model='resnet_50', training=True):
+        units = RESNET_50_UNIT
+        if model is 'resnet_101':
+            units = RESNET_101_UNIT
+        if model is 'resnet_152':
+            units = RESNET_152_UNIT
+        if model is 'resnet_200':
+            units = RESNET_200_UNIT
+        blocks = [
+            block('block1', bottleneck, [(256, 64, 1)] * (units[0] - 1) + [(256, 64, 2)]),
+            block('block2', bottleneck, [(512, 128, 1)] * (units[1] - 1) + [(512, 128, 2)]),
+            block('block3', bottleneck, [(1024, 256, 1)] * (units[2] - 1) + [(1024, 256, 2)]),
+            block('block4', bottleneck, [(2048, 512, 1)] * units[3])
+        ]
 
-    def _resnet(self, num_classes, name):
-        pass
-
-    def _residual_block(self, depth, units, stride, scope):
-        pass
+        net = conv_layer(self.img, 64, 7, 2, 'conv')
+        net = max_pool(net, 3, 2)
+        net = stack_block_dense(net, blocks, self.training)
+        feature = net
+        # global average pooling
+        with tf.name_scope('global_avg_pool'):
+            net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='net_flat')
+        net = fc_layer(net, self.num_classes, name='fc')
+        prediction = tf.nn.softmax(net, name='logits')
+        if training:
+            return feature, prediction
+        else:
+            return feature
