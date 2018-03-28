@@ -1,78 +1,86 @@
 import tensorflow as tf
-import tensorflow.contrib.slim as slim
-import collections
+from collections import namedtuple
+
+block = namedtuple('Bottleneck', ['name', 'unit_fn', 'args'])
+
+RESNET_50_UNIT = [3, 4, 6, 3]
+RESNET_101_UNIT = [3, 4, 23, 3]
+RESNET_152_UNIT = [3, 8, 36, 3]
+RESNET_200_UNIT = [3, 24, 36, 3]
 
 
-def resnet(inputs, blocks, num_classes=None, is_training=True, scope=None):
-    with tf.name_scope(scope):
-        with slim.arg_scope([slim.conv2d, residual_block, stack_blocks_dense]):
-            with slim.arg_scope([slim.batch_norm], is_training=is_training):
-                net = inputs
-                if include_root_block:
-                    if output_stride is not None:
-                        if output_stride % 4 != 0:
-                            raise ValueError('The output_stride needs to be a multiple of 4.')
-                        output_stride /= 4
-                    # We do not include batch normalization or activation functions in
-                    # conv1 because the first ResNet unit will perform these. Cf.
-                    # Appendix of [2].
-                    with slim.arg_scope([slim.conv2d],
-                                        activation_fn=None, normalizer_fn=None):
-                        net = resnet_utils.conv2d_same(net, 64, 7, stride=2, scope='conv1')
-                    net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
-                net = stack_blocks_dense(net, blocks, output_stride)
-                # This is needed because the pre-activation variant does not have batch
-                # normalization or activation functions in the residual unit output. See
-                # Appendix of [2].
-                net = slim.batch_norm(net, activation_fn=tf.nn.relu, scope='postnorm')
-                net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
-                if num_classes is not None:
-                    net = slim.conv2d(net, num_classes, [1, 1], scope='logits')
-                    net = tf.squeeze(net, [1, 2])
-                    prediction = slim.softmax(net, scope='predictions')
-                    return net, prediction
-                return net
+def resnet(image, num_classes, model='resnet_50', training=True):
+    units = RESNET_50_UNIT
+    if model is 'resnet_101':
+        units = RESNET_101_UNIT
+    if model is 'resnet_152':
+        units = RESNET_152_UNIT
+    if model is 'resnet_200':
+        units = RESNET_200_UNIT
+    blocks = [
+        block('block1', bottleneck, [(256, 64, 1)] * (units[0] - 1) + [(256, 64, 2)]),
+        block('block2', bottleneck, [(512, 128, 1)] * (units[1] - 1) + [(512, 128, 2)]),
+        block('block3', bottleneck, [(1024, 256, 1)] * (units[2] - 1) + [(1024, 256, 2)]),
+        block('block4', bottleneck, [(2048, 512, 1)] * units[3])
+    ]
 
-
-def resnet_block(depth_out, num_units, stride, scope):
-    pass
-
-
-@slim.add_arg_scope
-def residual_block(inputs, depth, depth_out, stride, scope='bottleneck'):
-    with tf.name_scope(scope):
-        depth_in = inputs.get_shape().as_list()[3]
-        preact = slim.batch_norm(inputs, activation_fn=tf.nn.relu, scope='preact')
-        if depth_out == depth_in:
-            shortcut = subsample(inputs, stride, 'shortcut')
-        else:
-            shortcut = slim.conv2d(preact, depth_out, [1, 1], stride=stride, scope='shortcut')
-
-        residual = slim.conv2d(preact, depth, [1, 1], stride=1, scope='conv1')
-        residual = conv2d_same(residual, depth, 3, stride, scope='conv2')
-        residual = slim.conv2d(residual, depth_out, [1, 1], stride=1, scope='conv3')
-        output = shortcut + residual
-        return output
-
-
-@slim.add_arg_scope
-def stack_blocks_dense():
-    return 0
-
-
-def subsample(inputs, factor, scope=None):
-    """
-    Subsamples the input along the spatial dimensions.
-    :param inputs: Input tensor
-    :param factor: Subsampling stride
-    :param scope: Optional variable scope
-    :return: Output tensor
-    """
-    if factor == 1:
-        return inputs
+    net = conv_layer(image, 64, ksize=7, strides=2)
+    net = max_pool(net, ksize=3, strides=2)
+    net = stack_block_dense(net, blocks, training)
+    feature = net
+    # global average pooling
+    with tf.name_scope('global_avg_pool'):
+        net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='net_flat')
+    net = fc_layer(net, num_classes, name='fc')
+    prediction = tf.nn.softmax(net)
+    if training:
+        return feature, prediction
     else:
-        return slim.max_pool2d(inputs, [1, 1], stride=factor, scope=scope)
+        return feature
 
 
-def conv2d_same(inputs, out_dim, kernel_size, stride, rate=1, scope=None):
-    return 0
+def bottleneck(inputs, depth, depth_neck, stride, training):
+    net = batch_norm(inputs, training)
+    depth_in = inputs.get_shape().as_list()[3]
+    if depth_in == depth:
+        shortcut = inputs
+    else:
+        shortcut = conv_layer(inputs, depth, ksize=1, strides=1)
+
+    net = conv_layer(net, depth_neck, ksize=1, strides=1)
+    net = batch_norm(net, training)
+    net = conv_layer(net, depth_neck, ksize=3, strides=stride)
+    net = batch_norm(net, training)
+    net = conv_layer(net, depth, ksize=1, strides=1)
+    output = net + shortcut
+    return output
+
+
+def batch_norm(inputs, training=True):
+    inputs = tf.layers.batch_normalization(inputs, momentum=0.997, epsilon=1e-5, training=training, fused=True)
+    return tf.nn.relu(inputs)
+
+
+def stack_block_dense(inputs, blocks, training):
+    net = inputs
+    for b in blocks:
+        with tf.name_scope(b.name):
+            for i, unit in enumerate(b.args):
+                with tf.name_scope('unit_%d' % (i + 1)):
+                    depth, depth_neck, stride = unit
+                    net = b.unit_fn(net, depth, depth_neck, stride, training)
+    return net
+
+
+def conv_layer(inputs, filters, ksize=1, strides=1, name='conv_layer'):
+    with tf.name_scope(name):
+        return tf.layers.conv2d(inputs, filters, ksize, (strides, strides), 'same')
+
+
+def fc_layer(inputs, num_out, activation=None, name='fc_layer'):
+    with tf.name_scope(name):
+        return tf.layers.dense(inputs, num_out, activation)
+
+
+def max_pool(inputs, ksize, strides):
+    return tf.layers.max_pooling2d(inputs, ksize, strides, 'same')
