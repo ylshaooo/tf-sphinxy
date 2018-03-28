@@ -1,5 +1,6 @@
 import tensorflow as tf
 from collections import namedtuple
+from utils import conv_layer, batch_norm, max_pool
 
 block = namedtuple('Bottleneck', ['name', 'unit_fn', 'args'])
 
@@ -9,7 +10,7 @@ RESNET_152_UNIT = [3, 8, 36, 3]
 RESNET_200_UNIT = [3, 24, 36, 3]
 
 
-def resnet(image, num_classes, model='resnet_50', training=True):
+def graph_resnet(image, num_classes, model='resnet_50', training=True):
     units = RESNET_50_UNIT
     if model is 'resnet_101':
         units = RESNET_101_UNIT
@@ -39,7 +40,7 @@ def resnet(image, num_classes, model='resnet_50', training=True):
         return feature
 
 
-def bottleneck(inputs, depth, depth_neck, stride, training):
+def bottleneck(inputs, depth, depth_neck, stride, training, name='residual'):
     net = batch_norm(inputs, training)
     depth_in = inputs.get_shape().as_list()[3]
     if depth_in == depth:
@@ -56,11 +57,6 @@ def bottleneck(inputs, depth, depth_neck, stride, training):
     return output
 
 
-def batch_norm(inputs, training=True):
-    inputs = tf.layers.batch_normalization(inputs, momentum=0.997, epsilon=1e-5, training=training, fused=True)
-    return tf.nn.relu(inputs)
-
-
 def stack_block_dense(inputs, blocks, training):
     net = inputs
     for b in blocks:
@@ -72,15 +68,6 @@ def stack_block_dense(inputs, blocks, training):
     return net
 
 
-def conv_layer(inputs, filters, ksize=1, strides=1, name='conv_layer'):
-    with tf.name_scope(name):
-        return tf.layers.conv2d(inputs, filters, ksize, (strides, strides), 'same')
-
-
 def fc_layer(inputs, num_out, activation=None, name='fc_layer'):
     with tf.name_scope(name):
         return tf.layers.dense(inputs, num_out, activation)
-
-
-def max_pool(inputs, ksize, strides):
-    return tf.layers.max_pooling2d(inputs, ksize, strides, 'same')
