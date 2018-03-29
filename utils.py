@@ -3,9 +3,7 @@ from collections import namedtuple
 import tensorflow as tf
 
 
-#############################
-# ResNet
-#############################
+# ---------------------------- ResNet -------------------------------
 
 block = namedtuple('Bottleneck', ['name', 'unit_fn', 'args'])
 
@@ -47,9 +45,7 @@ def stack_block_dense(inputs, blocks, training):
     return net
 
 
-#############################
-# Hourglass
-#############################
+# ---------------------------- Hourglass ----------------------------
 
 def hourglass(inputs, units, depth, name='hourglass'):
     """
@@ -77,9 +73,7 @@ def hourglass(inputs, units, depth, name='hourglass'):
         return tf.add_n([up_2, up_1], name='out_hg')
 
 
-#############################
-# Basic Network Module
-#############################
+# ---------------------- Basic Network Module -----------------------
 
 def fc_layer(inputs, num_out, activation=None, name='fc_layer'):
     with tf.name_scope(name):
@@ -105,9 +99,8 @@ def dropout(inputs, rate, training=True, name='dropout'):
         return tf.layers.dropout(inputs, rate, training=training)
 
 
-#############################
-# Loss & Error
-#############################
+# ----------------------------- Loss --------------------------------
+
 def error(pred, gt_maps, num_images):
     """
     Given a Prediction batch and a Ground Truth batch, returns normalized error distance.
@@ -119,7 +112,4 @@ def error(pred, gt_maps, num_images):
     for i in range(num_images):
         pass
 
-
-#############################
-# Other Utils
-#############################
+# ---------------------------- Other Utils --------------------------

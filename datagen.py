@@ -64,6 +64,8 @@ class DataGenerator:
                 self.train_table.append(name)
         input_file.close()
 
+    # -------------------- Generator Initialization Methods --------------------
+
     def _randomize(self):
         # randomize the set
         random.shuffle(self.train_set)
@@ -244,7 +246,7 @@ class DataGenerator:
             hm = transform.rotate(hm, r_angle)
         return img, hm
 
-    # ----------------------- Batch Generator ----------------------------------
+    # ------------------------- Batch Generator --------------------------------
 
     def _generator(self, batch_size=16, stacks=4, set_type='train', normalize=True, debug=False):
         """ Create Generator for Training
@@ -306,7 +308,6 @@ class DataGenerator:
 
     def aux_generator(self, batch_size=16, stacks=4, normalize=True, sample_set='train'):
         # Auxiliary Generator
-        global name
         while True:
             train_img = np.zeros((batch_size, 256, 256, 3), dtype=np.float32)
             train_gtmap = np.zeros((batch_size, stacks, 64, 64, len(self.points_list)), np.float32)
@@ -405,13 +406,13 @@ class DataGenerator:
         Args:
             toWait : In sec, time between pictures
         """
-        self.create_train_table()
-        self.create_sets()
+        self._create_train_table()
+        self._create_sets()
         for i in range(len(self.train_set)):
             img = self.open_img(self.train_set[i])
             w = self.data_dict[self.train_set[i]]['weights']
             pad, box = self._crop_data(img.shape[0], img.shape[1], self.data_dict[self.train_set[i]]['box'],
-                                        self.data_dict[self.train_set[i]]['points'], boxp=0.0)
+                                       self.data_dict[self.train_set[i]]['points'], boxp=0.0)
             new_j = self._relative_points(box, pad, self.data_dict[self.train_set[i]]['points'], to_size=256)
             rhm = self._generate_hm(256, 256, new_j, 256, w)
             rimg = self._crop_img(img, pad, box)
@@ -431,6 +432,7 @@ class DataGenerator:
                 break
 
     # ------------------------------- PCK METHODS-------------------------------
+
     def pck_ready(self, idlh=3, idrs=12, test_set=None):
         # Creates a list with all PCK ready samples
         # (PCK: Percentage of Correct Keypoints)
