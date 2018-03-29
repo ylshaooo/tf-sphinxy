@@ -8,26 +8,25 @@ import numpy as np
 from utils import *
 
 
-class SphinxModel(object):
+class SphinxModel:
     default_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                       'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                       'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
                       'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                       'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
 
-    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, batch_size=16, drop_rate=0.5,
-                 learning_rate=1e-3, decay=0.96, decay_step=2000, dataset=None, training=True, w_summary=True,
-                 logdir_train=None, logdir_test=None, w_loss=False, points=default_points, name='sphinx'):
-
+    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, batch_size=16, num_classes=5, drop_rate=0.5,
+                 learning_rate=1e-3, decay=0.96, decay_step=2000, dataset=None, training=True, w_loss=False,
+                 points=default_points, w_summary=True, logdir_train=None, logdir_test=None, name='sphinx'):
         self.nStacks = nStacks
         self.nFeats = nFeats
         self.out_dim = out_dim
         self.batch_size = batch_size
+        self.num_classes = num_classes
         self.training = training
         self.dropout_rate = drop_rate
         self.learning_rate = learning_rate
         self.decay = decay
-        self.name = name
         self.decay_step = decay_step
         self.nLow = nLow
         self.dataset = dataset
@@ -35,9 +34,10 @@ class SphinxModel(object):
         self.gpu = '/gpu:0'
         self.logdir_train = logdir_train
         self.logdir_test = logdir_test
+        self.w_loss = w_loss
         self.points = points
         self.w_summary = w_summary
-        self.w_loss = w_loss
+        self.name = name
         self.resume = {}
 
     def generate_model(self):

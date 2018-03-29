@@ -9,28 +9,23 @@ import scipy.misc as scm
 from skimage import transform
 
 
-class DataGenerator():
-    def __init__(self, points_name=None, img_dir=None, train_data_file=None, remove_points=None, keep_invalid=False):
+class DataGenerator:
+    def __init__(self, points_list=None, img_dir=None, train_data_file=None, keep_invalid=False):
         """
         Initializer
-        :param points_name: List of points considered
+        :param points_list: List of points considered
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
-        :param remove_points: points List to keep
-        :param keep_invalid:
+        :param keep_invalid: Whether to use invalid data
         """
-        if points_name is None:
+        if points_list is None:
             self.points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                                 'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                                 'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
                                 'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                                 'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
         else:
-            self.points_list = points_name
-        self.toReduce = False
-        if remove_points is not None:
-            self.toReduce = True
-            self.weightJ = remove_points
+            self.points_list = points_list
 
         self.letter = ['A']
         self.img_dir = img_dir
@@ -44,19 +39,8 @@ class DataGenerator():
         self.current_train_index = 0
         self.current_valid_index = 0
 
-    def _reduce_points(self, points):
-        """ Select points of interest from self.weightJ
-        """
-        j = []
-        for i in range(len(self.weightJ)):
-            if self.weightJ[i] == 1:
-                j.append(points[2 * i])
-                j.append(points[2 * i + 1])
-        return j
-
-    def create_train_table(self):
-        """ Create Table of samples from TEXT file
-        """
+    def _create_train_table(self):
+        # Create Table of samples from TEXT file
         self.train_table = []
         self.no_intel = []
         self.data_dict = {}
@@ -67,10 +51,7 @@ class DataGenerator():
             line = line.split(' ')
             name = line[0]
             category = line[1]
-            box = list(map(int, line[2:6]))
             points = list(map(int, line[6:]))
-            if self.toReduce:
-                points = self._reduce_points(points)
             if points == [-1] * len(points):
                 self.no_intel.append(name)
             else:
@@ -79,54 +60,52 @@ class DataGenerator():
                 points = points[:, :2]
                 if not self.keep_invalid:
                     points[np.equal(w, 0)] = [-1, -1]
-                # for i in range(points.shape[0]):
-                # if np.array_equal(points[i], [-1,-1]):
-                # w[i] = 0
-                self.data_dict[name] = {'box': box, 'points': points, 'weights': w, 'category': category}
+                self.data_dict[name] = {'points': points, 'weights': w, 'category': category}
                 self.train_table.append(name)
         input_file.close()
 
-    def randomize(self):
-        """ Randomize the set
-        """
+    def _randomize(self):
+        # randomize the set
         random.shuffle(self.train_set)
 
     def _complete_sample(self, name):
-        """ Check if a sample has no missing value
-        Args:
-            name 	: Name of the sample
+        """
+        Check if a sample has no missing value
+        :param name: Name of the sample
         """
         for i in range(self.data_dict[name]['points'].shape[0]):
             if np.array_equal(self.data_dict[name]['points'][i], [-1, -1]):
                 return False
         return True
 
-    def _give_batch_name(self, batch_size=16, set='train'):
-        """ Returns a List of Samples
-        Args:
-            batch_size	: Number of sample wanted
-            set				: Set to use (valid/train)
+    def _give_batch_name(self, batch_size=16, set_type='train'):
+        """
+        :param batch_size: Number of sample
+        :param set_type: Set to use (valid/train)
+        :return: a List of Samples
         """
         list_file = []
         for i in range(batch_size):
-            if set == 'train':
+            if set_type == 'train':
                 list_file.append(random.choice(self.train_set))
-            elif set == 'valid':
+            elif set_type == 'valid':
                 list_file.append(random.choice(self.valid_set))
             else:
                 print('Set must be : train/valid')
                 break
         return list_file
 
-    def create_sets(self, validation_rate=0.1):
-        """ Select Elements to feed training and validation set
-        Args:
-            validation_rate		: Percentage of validation data (in ]0,1[, don't waste time use 0.1)
-        """
-        sample = len(self.train_table)
-        valid_sample = int(sample * validation_rate)
-        self.train_set = self.train_table[:sample - valid_sample]
-        self.valid_set = self.train_table[sample - valid_sample:]
+    def _create_sets(self):
+        # Select Elements to feed training and validation set
+        num_images = len(self.train_table)
+        self.train_set = []
+        self.valid_set = []
+        valid_index = [i for i in range(0, num_images, 10)]
+        for i in range(num_images):
+            if i in valid_index:
+                self.valid_set.append(self.train_table[i])
+            else:
+                self.train_set.append(self.train_table[i])
         print('SET CREATED')
         np.save('Dataset-Validation-Set', self.valid_set)
         np.save('Dataset-Training-Set', self.train_set)
@@ -138,15 +117,16 @@ class DataGenerator():
         Args:
             rand : (bool) True to shuffle the set
         """
-        self.create_train_table()
+        self._create_train_table()
+        self._create_sets()
         if rand:
-            self.randomize()
-        self.create_sets()
+            self._randomize()
 
     # ---------------------------- Generating Methods --------------------------
 
     def _make_gaussian(self, height, width, sigma=3, center=None):
-        """ Make a square gaussian kernel.
+        """
+        Make a square gaussian kernel.
         size is the length of a side of the square
         sigma is full-width-half-maximum, which
         can be thought of as an effective radius.
@@ -161,20 +141,20 @@ class DataGenerator():
             y0 = center[1]
         return np.exp(-4 * np.log(2) * ((x - x0) ** 2 + (y - y0) ** 2) / sigma ** 2)
 
-    def _generate_hm(self, height, width, points, maxlenght, weight):
+    def _generate_hm(self, height, width, points, max_length, weight):
         """ Generate a full Heap Map for every points in an array
         Args:
             height			: Wanted Height for the Heat Map
             width			: Wanted Width for the Heat Map
             points			: Array of points
-            maxlenght		: Lenght of the Bounding Box
+            max_length		: Length of the Bounding Box
         """
         num_points = points.shape[0]
         hm = np.zeros((height, width, num_points), dtype=np.float32)
         new_j = points.astype(np.int32)
         for i in range(num_points):
             if not (np.array_equal(new_j[i], [-1, -1])) and weight[i] == 1:
-                s = int(np.sqrt(maxlenght) * maxlenght * 10 / 4096) + 2
+                s = int(np.sqrt(max_length) * max_length * 10 / 4096) + 2
                 hm[:, :, i] = self._make_gaussian(height, width, sigma=s, center=(new_j[i, 0], new_j[i, 1]))
             else:
                 hm[:, :, i] = np.zeros((height, width))
@@ -258,8 +238,6 @@ class DataGenerator():
         return new_j
 
     def _augment(self, img, hm, max_rotation=30):
-        """ # TODO : IMPLEMENT DATA AUGMENTATION
-        """
         if random.choice([0, 1]):
             r_angle = np.random.randint(-1 * max_rotation, max_rotation)
             img = transform.rotate(img, r_angle, preserve_range=True)
@@ -268,13 +246,12 @@ class DataGenerator():
 
     # ----------------------- Batch Generator ----------------------------------
 
-    def _generator(self, batch_size=16, stacks=4, set='train', stored=False, normalize=True, debug=False):
+    def _generator(self, batch_size=16, stacks=4, set_type='train', normalize=True, debug=False):
         """ Create Generator for Training
         Args:
             batch_size	: Number of images per batch
             stacks			: Number of stacks/module in the network
             set				: Training/Testing/Validation set # TODO: Not implemented yet
-            stored			: Use stored Value # TODO: Not implemented yet
             normalize		: True to return Image Value between 0 and 1
             _debug			: Boolean to test the computation time (/!\ Keep False)
         # Done : Optimize Computation time
@@ -284,8 +261,8 @@ class DataGenerator():
             if debug:
                 t = time.time()
             train_img = np.zeros((batch_size, 256, 256, 3), dtype=np.float32)
-            train_gtmap = np.zeros((batch_size, stacks, 64, 64, len(self.points_list)), np.float32)
-            files = self._give_batch_name(batch_size=batch_size, set=set)
+            train_gt = np.zeros((batch_size, stacks, 64, 64, len(self.points_list)), np.float32)
+            files = self._give_batch_name(batch_size=batch_size, set_type=set_type)
             for i, name in enumerate(files):
                 if name[:-1] in self.images:
                     try:
@@ -295,13 +272,13 @@ class DataGenerator():
                         weight = self.data_dict[name]['weights']
                         if debug:
                             print(box)
-                        padd, cbox = self._crop_data(img.shape[0], img.shape[1], box, points, boxp=0.2)
+                        pad, cbox = self._crop_data(img.shape[0], img.shape[1], box, points, boxp=0.2)
                         if debug:
                             print(cbox)
                             print('maxl :', max(cbox[2], cbox[3]))
-                        new_j = self._relative_points(cbox, padd, points, to_size=64)
+                        new_j = self._relative_points(cbox, pad, points, to_size=64)
                         hm = self._generate_hm(64, 64, new_j, 64, weight)
-                        img = self._crop_img(img, padd, cbox)
+                        img = self._crop_img(img, pad, cbox)
                         img = img.astype(np.uint8)
                         # On 16 image per batch
                         # Avg Time -OpenCV : 1.0 s -skimage: 1.25 s -scipy.misc.imresize: 1.05s
@@ -318,20 +295,18 @@ class DataGenerator():
                             train_img[i] = img.astype(np.float32) / 255
                         else:
                             train_img[i] = img.astype(np.float32)
-                        train_gtmap[i] = hm
+                        train_gt[i] = hm
                     except:
                         i = i - 1
                 else:
                     i = i - 1
             if debug:
                 print('Batch : ', time.time() - t, ' sec.')
-            yield train_img, train_gtmap
+            yield train_img, train_gt
 
-    def _aux_generator(self, batch_size=16, stacks=4, normalize=True, sample_set='train'):
-        """ Auxiliary Generator
-        Args:
-            See Args section in self._generator
-        """
+    def aux_generator(self, batch_size=16, stacks=4, normalize=True, sample_set='train'):
+        # Auxiliary Generator
+        global name
         while True:
             train_img = np.zeros((batch_size, 256, 256, 3), dtype=np.float32)
             train_gtmap = np.zeros((batch_size, stacks, 64, 64, len(self.points_list)), np.float32)
@@ -349,7 +324,6 @@ class DataGenerator():
                         self.current_valid_index += 1
                         if self.current_valid_index == len(self.valid_set):
                             self.current_valid_index = 0
-                    points = self.data_dict[name]['points']
                     box = self.data_dict[name]['box']
                     weight = np.asarray(self.data_dict[name]['weights'])
                     train_weights[i] = weight
@@ -387,7 +361,7 @@ class DataGenerator():
             norm 	 	 	: (bool) True to normalize the batch
             sample 	 	: 'train'/'valid' Default: 'train'
         """
-        return self._aux_generator(batch_size=batchSize, stacks=stacks, normalize=norm, sample_set=sample)
+        return self.aux_generator(batch_size=batchSize, stacks=stacks, normalize=norm, sample_set=sample)
 
     # ---------------------------- Image Reader --------------------------------
     def open_img(self, name, color='RGB'):
@@ -431,22 +405,22 @@ class DataGenerator():
         Args:
             toWait : In sec, time between pictures
         """
-        self._create_train_table()
-        self._create_sets()
+        self.create_train_table()
+        self.create_sets()
         for i in range(len(self.train_set)):
             img = self.open_img(self.train_set[i])
             w = self.data_dict[self.train_set[i]]['weights']
-            padd, box = self._crop_data(img.shape[0], img.shape[1], self.data_dict[self.train_set[i]]['box'],
+            pad, box = self._crop_data(img.shape[0], img.shape[1], self.data_dict[self.train_set[i]]['box'],
                                         self.data_dict[self.train_set[i]]['points'], boxp=0.0)
-            new_j = self._relative_points(box, padd, self.data_dict[self.train_set[i]]['points'], to_size=256)
+            new_j = self._relative_points(box, pad, self.data_dict[self.train_set[i]]['points'], to_size=256)
             rhm = self._generate_hm(256, 256, new_j, 256, w)
-            rimg = self._crop_img(img, padd, box)
+            rimg = self._crop_img(img, pad, box)
             # See Error in self._generator
             # rimg = cv2.resize(rimg, (256,256))
             rimg = scm.imresize(rimg, (256, 256))
             # rhm = np.zeros((256,256,16))
             # for i in range(16):
-            #	rhm[:,:,i] = cv2.resize(rHM[:,:,i], (256,256))
+            # rhm[:,:,i] = cv2.resize(rHM[:,:,i], (256,256))
             grimg = cv2.cvtColor(rimg, cv2.COLOR_RGB2GRAY)
             cv2.imshow('image', grimg / 255 + np.sum(rhm, axis=2))
             # Wait
@@ -457,29 +431,28 @@ class DataGenerator():
                 break
 
     # ------------------------------- PCK METHODS-------------------------------
-    def pck_ready(self, idlh=3, idrs=12, testSet=None):
-        """ Creates a list with all PCK ready samples
-        (PCK: Percentage of Correct Keypoints)
-        """
+    def pck_ready(self, idlh=3, idrs=12, test_set=None):
+        # Creates a list with all PCK ready samples
+        # (PCK: Percentage of Correct Keypoints)
         id_lhip = idlh
         id_rsho = idrs
         self.total_points = 0
         self.pck_samples = []
         for s in self.data_dict.keys():
-            if testSet == None:
+            if test_set is None:
                 if self.data_dict[s]['weights'][id_lhip] == 1 and self.data_dict[s]['weights'][id_rsho] == 1:
                     self.pck_samples.append(s)
                     wIntel = np.unique(self.data_dict[s]['weights'], return_counts=True)
                     self.total_points += dict(zip(wIntel[0], wIntel[1]))[1]
             else:
-                if self.data_dict[s]['weights'][id_lhip] == 1 and self.data_dict[s]['weights'][
-                    id_rsho] == 1 and s in testSet:
-                    self.pck_samples.append(s)
-                    wIntel = np.unique(self.data_dict[s]['weights'], return_counts=True)
-                    self.total_points += dict(zip(wIntel[0], wIntel[1]))[1]
+                if self.data_dict[s]['weights'][id_lhip] == 1 and self.data_dict[s]['weights'][id_rsho] == 1:
+                    if s in test_set:
+                        self.pck_samples.append(s)
+                        wIntel = np.unique(self.data_dict[s]['weights'], return_counts=True)
+                        self.total_points += dict(zip(wIntel[0], wIntel[1]))[1]
         print('PCK PREPROCESS DONE: \n --Samples:', len(self.pck_samples), '\n --Num.points', self.total_points)
 
-    def getSample(self, sample=None):
+    def get_sample(self, sample=None):
         """ Returns information of a sample
         Args:
             sample : (str) Name of the sample
@@ -490,7 +463,7 @@ class DataGenerator():
             joint_full: Raw points
             max_l: Maximum Size of Input Image
         """
-        if sample != None:
+        if sample is not None:
             try:
                 points = self.data_dict[sample]['points']
                 box = self.data_dict[sample]['box']

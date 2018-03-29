@@ -1,6 +1,7 @@
 import configparser
-from sphinx import SphinxModel
+
 from datagen import DataGenerator
+from sphinx import SphinxModel
 
 
 def process_config(conf_file):
@@ -31,20 +32,18 @@ if __name__ == '__main__':
     params = process_config('config.cfg')
 
     print('--Creating Dataset')
-    dataset = DataGenerator(params['joint_list'], params['img_directory'], params['training_txt_file'],
-                            remove_joints=params['remove_joints'])
-    dataset.create_train_table()
-    dataset.create_sets()
-    dataset.randomize()
+    dataset = DataGenerator(params['points_list'], params['img_directory'], params['training_txt_file'],
+                            params['remove_points'])
+    dataset.generate_set(rand=True)
 
-    model = SphinxModel(nFeat=params['nfeats'], nStack=params['nstacks'], nModules=params['nmodules'],
-                        nLow=params['nlow'], outputDim=params['num_joints'], batch_size=params['batch_size'],
-                        attention=params['mcam'], training=True, drop_rate=params['dropout_rate'],
-                        lear_rate=params['learning_rate'], decay=params['learning_rate_decay'],
-                        decay_step=params['decay_step'], dataset=dataset, name=params['name'],
-                        logdir_train=params['log_dir_train'], logdir_test=params['log_dir_test'],
-                        tiny=params['tiny'], w_loss=params['weighted_loss'], joints=params['joint_list'],
-                        modif=False)
+    model = SphinxModel(
+        nFeats=params['nfeats'], nStacks=params['nstacks'], nLow=params['nlow'],
+        out_dim=params['num_points'], batch_size=params['batch_size'], num_classes=params['num_classes'],
+        drop_rate=params['dropout_rate'], learning_rate=params['learning_rate'],
+        decay=params['learning_rate_decay'], decay_step=params['decay_step'], training=True,
+        dataset=dataset, points=params['point_list'], logdir_train=params['logdir_train'],
+        logdir_test=params['logdir_test'], w_loss=params['weighted_loss'], name=params['name']
+    )
     model.generate_model()
-    model.training_init(nEpochs=params['nepochs'], epochSize=params['epoch_size'], saveStep=params['saver_step'],
-                        dataset=None, load='checkpoints/hg_refined_200_20')
+    model.training_init(nEpochs=params['nEpochs'], epoch_size=params['epoch_size'],
+                        save_step=params['saver_step'], load=params['load'])
