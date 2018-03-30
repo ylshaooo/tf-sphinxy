@@ -9,18 +9,21 @@ from utils import *
 
 
 class SphinxModel:
-    default_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
+    key_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                       'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                       'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
                       'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                       'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
 
-    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, batch_size=16, num_classes=5, drop_rate=0.5,
-                 learning_rate=1e-3, decay=0.96, decay_step=2000, dataset=None, training=True, w_loss=False,
-                 points=default_points, w_summary=True, logdir_train=None, logdir_test=None, name='sphinx'):
+    def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, img_size=256, hm_size=64, batch_size=16,
+                 num_classes=5, drop_rate=0.5, learning_rate=1e-3, decay=0.96, decay_step=2000, dataset=None,
+                 training=True, w_loss=False, points=key_points, w_summary=True, logdir_train=None,
+                 logdir_test=None, name='sphinx'):
         self.nStacks = nStacks
         self.nFeats = nFeats
         self.out_dim = out_dim
+        self.img_size = img_size
+        self.hm_size = hm_size
         self.batch_size = batch_size
         self.num_classes = num_classes
         self.training = training
@@ -106,13 +109,14 @@ class SphinxModel:
 
     def _train(self, nEpochs=10, epoch_size=1000, save_step=500, valid_iter=10):
         with tf.name_scope('Train'):
-            self.generator = self.dataset.aux_generator(self.batch_size, self.nStacks, normalize=True,
-                                                        sample_set='train')
-            self.valid_gen = self.dataset.aux_generator(self.batch_size, self.nStacks, normalize=True,
-                                                        sample_set='valid')
+            self.train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
+                                                    self.nStacks, normalize=True, sample_set='train')
+            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
+                                                    self.nStacks, normalize=True, sample_set='valid')
             start_time = time.time()
             self.resume['loss'] = []
             self.resume['error'] = []
+            cost = 0.
             for epoch in range(nEpochs):
                 epoch_start_time = time.time()
                 avg_cost = 0.
@@ -131,12 +135,12 @@ class SphinxModel:
                     )
                     sys.stdout.flush()
 
-                    img_train, gt_train, weight_train = next(self.generator)
+                    img_train, gt_train, w_train = next(self.train_gen)
                     if i % save_step == 0:
                         if self.w_loss:
                             _, c, summary = self.Session.run(
                                 [self.train_rmsprop, self.loss, self.train_op],
-                                {self.img: img_train, self.gt_maps: gt_train, self.weights: weight_train}
+                                {self.img: img_train, self.gt_maps: gt_train, self.weights: w_train}
                             )
                         else:
                             _, c, summary = self.Session.run(
@@ -150,7 +154,7 @@ class SphinxModel:
                         if self.w_loss:
                             _, c, = self.Session.run(
                                 [self.train_rmsprop, self.loss],
-                                {self.img: img_train, self.gt_maps: gt_train, self.weights: weight_train}
+                                {self.img: img_train, self.gt_maps: gt_train, self.weights: w_train}
                             )
                         else:
                             _, c, = self.Session.run(
@@ -165,7 +169,7 @@ class SphinxModel:
                 if self.w_loss:
                     weight_summary = self.Session.run(
                         self.weight_op,
-                        {self.img: img_train, self.gt_maps: gt_train, self.weights: weight_train}
+                        {self.img: img_train, self.gt_maps: gt_train, self.weights: w_train}
                     )
                 else:
                     weight_summary = self.Session.run(
@@ -223,12 +227,12 @@ class SphinxModel:
                 self._train(nEpochs, epoch_size, save_step, valid_iter=10)
 
     def weighted_bce_loss(self):
-        self.bce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.gt_maps),
-                                       name='cross_entropy_loss')
+        bce_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.gt_maps),
+                                  name='cross_entropy_loss')
         e1 = tf.expand_dims(self.weights, axis=1, name='exp_dim1')
         e2 = tf.expand_dims(e1, axis=1, name='exp_dim2')
         e3 = tf.expand_dims(e2, axis=1, name='exp_dim3')
-        return tf.multiply(e3, self.bce_loss, name='lossW')
+        return tf.multiply(e3, bce_loss, name='lossW')
 
     def _error_computation(self):
         self.point_error = []
@@ -315,7 +319,7 @@ class SphinxModel:
         arg_max = tf.argmax(reshape, 0)
         return arg_max // tensor.get_shape().as_list()[0], arg_max % tensor.get_shape().as_list()[0]
 
-    def _graph_resnet(self, model='resnet_50', training=True):
+    def _graph_resnet(self, model='resnet_50'):
         units = RESNET_50_UNIT
         if model is 'resnet_101':
             units = RESNET_101_UNIT
@@ -339,7 +343,7 @@ class SphinxModel:
             net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='net_flat')
         net = fc_layer(net, self.num_classes, name='fc')
         prediction = tf.nn.softmax(net, name='logits')
-        if training:
+        if self.training:
             return feature, prediction
         else:
             return feature

@@ -51,25 +51,25 @@ def hourglass(inputs, units, depth, name='hourglass'):
     """
     Hourglass Module
     :param inputs: Input tensor
-    :param n: Number of down-sampling step
-    :param out_dim: Number of output features (channels)
+    :param units: Number of down-sampling step
+    :param depth: Number of output features (channels)
     :param name: Name of the block
     :return: Output tensor
     """
     with tf.name_scope(name):
         # Upper Branch
-        up_1 = self._residual(inputs, depth, name='up_1')
+        up_1 = bottleneck(inputs, depth, name='up_1')
         # Lower Branch
-        low_ = tf.contrib.layers.max_pool2d(inputs, [2, 2], [2, 2])
-        low_1 = self._residual(low_, depth, name='low_1')
+        net = max_pool(inputs, 2, 2)
+        net = bottleneck(net, depth, name='low_1')
 
         if units > 0:
-            low_2 = self._hourglass(low_1, units - 1, depth, name='low_2')
+            net = hourglass(net, units - 1, depth, name='low_2')
         else:
-            low_2 = self._residual(low_1, depth, name='low_2')
+            net = bottleneck(net, depth, name='low_2')
 
-        low_3 = self._residual(low_2, depth, name='low_3')
-        up_2 = tf.image.resize_bilinear(low_3, tf.shape(low_3)[1:3] * 2, name='upsampling')
+        net = bottleneck(net, depth, name='low_3')
+        up_2 = tf.image.resize_bilinear(net, tf.shape(net)[1:3] * 2, name='upsampling')
         return tf.add_n([up_2, up_1], name='out_hg')
 
 
