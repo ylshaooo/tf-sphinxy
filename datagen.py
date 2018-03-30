@@ -62,10 +62,12 @@ def _make_gaussian(height, width, center, sigma=3):
 
 
 class DataGenerator:
-    def __init__(self, points_list=None, img_dir=None, train_data_file=None, keep_invalid=False):
+    def __init__(self, points_list=None, num_validation=None,
+                 img_dir=None, train_data_file=None, keep_invalid=False):
         """
         Initializer
         :param points_list: List of points considered
+        :param num_validation: Number of image to use in validation
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
         :param keep_invalid: True to keep nonexistent points
@@ -79,6 +81,7 @@ class DataGenerator:
         else:
             self.points_list = points_list
 
+        self.num_validation = num_validation
         self.img_dir = img_dir
         self.train_data_file = train_data_file
         self.images = os.listdir(img_dir)
@@ -120,16 +123,6 @@ class DataGenerator:
     def _randomize(self):
         # randomize the set
         random.shuffle(self.train_set)
-
-    def _complete_sample(self, name):
-        """
-        Check if a sample has no missing value
-        :param name: Name of the sample
-        """
-        for i in range(self.data_dict[name]['points'].shape[0]):
-            if np.array_equal(self.data_dict[name]['points'][i], [-1, -1]):
-                return False
-        return True
 
     def _create_sets(self):
         # Select Elements to feed training and validation set
@@ -194,41 +187,39 @@ class DataGenerator:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
             gt_maps = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
             weights = np.zeros((batch_size, len(self.points_list)), np.float32)
+
             i = 0
             while i < batch_size:
-                try:
-                    if sample_set == 'train':
-                        name = self.train_set[self.current_train_index]
-                        self.current_train_index += 1
-                        if self.current_train_index == len(self.train_set):
-                            self.current_train_index = 0
-                    elif sample_set == 'valid':
-                        name = self.valid_set[self.current_valid_index]
-                        self.current_valid_index += 1
-                        if self.current_valid_index == len(self.valid_set):
-                            self.current_valid_index = 0
+                if sample_set == 'train':
+                    name = self.train_set[self.current_train_index]
+                    self.current_train_index += 1
+                    if self.current_train_index == len(self.train_set):
+                        self.current_train_index = 0
+                if sample_set == 'valid':
+                    name = self.valid_set[self.current_valid_index]
+                    self.current_valid_index += 1
+                    if self.current_valid_index == len(self.valid_set):
+                        self.current_valid_index = 0
 
-                    point = self.data_dict[name]['points']
-                    weight = np.asarray(self.data_dict[name]['weights'])
-                    weights[i] = weight
-                    img = self.open_img(name)
-                    new_p = _relative_points(point, img.shape)
-                    hm = self._generate_hm(hm_size, hm_size, new_p, hm_size, weight)
-                    img = _pad_img(img)
-                    img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
-                    if sample_set == 'train':
-                        images, hm = _augment(images, hm)
-                    if normalize:
-                        images[i] = img.astype(np.float32) / 255
-                    else:
-                        images[i] = img.astype(np.float32)
+                point = self.data_dict[name]['points']
+                weight = np.asarray(self.data_dict[name]['weights'])
+                weights[i] = weight
+                img = self.open_img(name)
+                new_p = _relative_points(point, img.shape)
+                hm = self._generate_hm(hm_size, hm_size, new_p, hm_size, weight)
+                img = _pad_img(img)
+                img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
+                if sample_set == 'train':
+                    images, hm = _augment(images, hm)
+                if normalize:
+                    images[i] = img.astype(np.float32) / 255
+                else:
+                    images[i] = img.astype(np.float32)
 
-                    hm = np.expand_dims(hm, axis=0)
-                    hm = np.repeat(hm, stacks, axis=0)
-                    gt_maps[i] = hm
-                    i = i + 1
-                except:
-                    return
+                hm = np.expand_dims(hm, axis=0)
+                hm = np.repeat(hm, stacks, axis=0)
+                gt_maps[i] = hm
+                i = i + 1
             yield images, gt_maps, weights
 
     # ---------------------------- Image Reader --------------------------------

@@ -99,17 +99,4 @@ def dropout(inputs, rate, training=True, name='dropout'):
         return tf.layers.dropout(inputs, rate, training=training)
 
 
-# ----------------------------- Loss --------------------------------
-
-def error(pred, gt_maps, num_images):
-    """
-    Given a Prediction batch and a Ground Truth batch, returns normalized error distance.
-    :param pred: Prediction batch (shape = num_image x 64 x 64)
-    :param gt_maps: Ground truth batch (shape = num_image x 64 x 64)
-    :param num_images: (int) Number of images in batch
-    :return: (float)
-    """
-    for i in range(num_images):
-        pass
-
 # ---------------------------- Other Utils --------------------------
