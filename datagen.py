@@ -61,6 +61,12 @@ def _make_gaussian(height, width, center, sigma=3):
     return np.exp(-4 * np.log(2) * ((x - x0) ** 2 + (y - y0) ** 2) / sigma ** 2)
 
 
+def _make_one_hot(height, width, center):
+    hm = np.zeros((height, width))
+    hm[center] = 1
+    return hm
+
+
 class DataGenerator:
     def __init__(self, points_list=None, num_validation=None,
                  img_dir=None, train_data_file=None, keep_invalid=False):
@@ -154,7 +160,7 @@ class DataGenerator:
     # ---------------------------- Generating Methods --------------------------
 
     @staticmethod
-    def _generate_hm(height, width, points, max_length, weight):
+    def _generate_hm(height, width, points, weight):
         """
         Generate a full Heap Map for every points in an array
         :param height: Height for the Heat Map
@@ -166,8 +172,7 @@ class DataGenerator:
         new_p = points.astype(np.int32)
         for i in range(num_points):
             if not np.array_equal(new_p[i], [-1, -1]) and weight[i] == 1:
-                sigma = int(np.sqrt(max_length) * max_length * 10 / 4096) + 2
-                hm[:, :, i] = _make_gaussian(height, width, (new_p[i, 0], new_p[i, 1]), sigma)
+                hm[:, :, i] = _make_one_hot(height, width, (new_p[i, 1], new_p[i, 0]))
             else:
                 hm[:, :, i] = np.zeros((height, width))
         return hm
@@ -206,7 +211,7 @@ class DataGenerator:
                 weights[i] = weight
                 img = self.open_img(name)
                 new_p = _relative_points(point, img.shape)
-                hm = self._generate_hm(hm_size, hm_size, new_p, hm_size, weight)
+                hm = self._generate_hm(hm_size, hm_size, new_p, weight)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
