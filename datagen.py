@@ -61,10 +61,10 @@ def _make_gaussian(height, width, center, sigma=3):
     return np.exp(-4 * np.log(2) * ((x - x0) ** 2 + (y - y0) ** 2) / sigma ** 2)
 
 
-def _make_one_hot(height, width, center):
-    hm = np.zeros((height, width))
-    hm[center] = 1
-    return hm
+def _make_one_hot(center, shape):
+    one_hot = np.zeros(shape)
+    one_hot[center] = 1
+    return one_hot
 
 
 class DataGenerator:
@@ -86,6 +86,7 @@ class DataGenerator:
                                 'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
         else:
             self.points_list = points_list
+        self.label = {'blouse': 0, 'dress': 1, 'outwear': 2, 'skirt': 3, 'trousers': 4}
 
         self.num_validation = num_validation
         self.img_dir = img_dir
@@ -113,6 +114,7 @@ class DataGenerator:
             line = line.split(' ')
             name = line[0]
             category = line[1]
+            label = self.label[category]
             points = list(map(int, line[6:]))
             if points == [-1] * len(points):
                 self.no_intel.append(name)
@@ -122,7 +124,7 @@ class DataGenerator:
                 points = points[:, :2]
                 if not self.keep_invalid:
                     points[np.equal(w, 0)] = [-1, -1]
-                self.data_dict[name] = {'points': points, 'weights': w, 'category': category}
+                self.data_dict[name] = {'points': points, 'label': label, 'weight': w}
                 self.train_table.append(name)
         input_file.close()
 
@@ -172,15 +174,16 @@ class DataGenerator:
         new_p = points.astype(np.int32)
         for i in range(num_points):
             if not np.array_equal(new_p[i], [-1, -1]) and weight[i] == 1:
-                hm[:, :, i] = _make_one_hot(height, width, (new_p[i, 1], new_p[i, 0]))
+                hm[:, :, i] = _make_one_hot((new_p[i, 1], new_p[i, 0]), (height, width))
             else:
                 hm[:, :, i] = np.zeros((height, width))
         return hm
 
-    def generator(self, img_size=256, hm_size=64, batch_size=16, stacks=4,
+    def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4,
                   normalize=True, sample_set='train'):
         """
         Batch Generator
+        :param num_classes: Number of classes
         :param hm_size: Size of heat map
         :param img_size: Size of image
         :param batch_size: Number of images per batch
@@ -190,6 +193,7 @@ class DataGenerator:
         """
         while True:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
+            gt_labels = np.zeros((batch_size, num_classes), np.float32)
             gt_maps = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
             weights = np.zeros((batch_size, len(self.points_list)), np.float32)
 
@@ -207,7 +211,9 @@ class DataGenerator:
                         self.current_valid_index = 0
 
                 point = self.data_dict[name]['points']
-                weight = np.asarray(self.data_dict[name]['weights'])
+                label = self.data_dict[name]['label']
+                gt_labels[i] = _make_one_hot(label, num_classes)
+                weight = np.asarray(self.data_dict[name]['weight'])
                 weights[i] = weight
                 img = self.open_img(name)
                 new_p = _relative_points(point, img.shape)
@@ -225,7 +231,7 @@ class DataGenerator:
                 hm = np.repeat(hm, stacks, axis=0)
                 gt_maps[i] = hm
                 i = i + 1
-            yield images, gt_maps, weights
+            yield images, gt_labels, gt_maps, weights
 
     # ---------------------------- Image Reader --------------------------------
 

@@ -80,13 +80,18 @@ def fc_layer(inputs, num_out, activation=None, name='fc_layer'):
         return tf.layers.dense(inputs, num_out, activation)
 
 
-def conv_layer(inputs, filters, ksize=1, strides=1, name='conv_layer'):
+def conv_layer(inputs, filters, ksize=1, stride=1, activation=None, name='conv_layer'):
     with tf.name_scope(name):
-        return tf.layers.conv2d(inputs, filters, ksize, (strides, strides), 'same')
+        return tf.layers.conv2d(inputs, filters, ksize, (stride, stride), 'same', activation=activation)
 
 
-def max_pool(inputs, ksize, strides, name='pool'):
-    return tf.layers.max_pooling2d(inputs, ksize, strides, 'same')
+def deconv_layer(inputs, filters, ksize, stride, activation=None, name='deconv_layer'):
+    with tf.name_scope(name):
+        return tf.layers.conv2d_transpose(inputs, filters, ksize, (stride, stride), 'same', activation=activation)
+
+
+def max_pool(inputs, ksize, stride, name='pool'):
+    return tf.layers.max_pooling2d(inputs, ksize, stride, 'same', name=name)
 
 
 def batch_norm(inputs, training=True):
@@ -95,8 +100,7 @@ def batch_norm(inputs, training=True):
 
 
 def dropout(inputs, rate, training=True, name='dropout'):
-    with tf.name_scope(name):
-        return tf.layers.dropout(inputs, rate, training=training)
+    return tf.layers.dropout(inputs, rate, training=training, name=name)
 
 
 # ---------------------------- Other Utils --------------------------
