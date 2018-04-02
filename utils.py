@@ -99,6 +99,20 @@ def batch_norm(inputs, training=True):
     return tf.nn.relu(inputs)
 
 
+def group_norm(inputs, group=16, esp=1e-5, name='group_norm'):
+    with tf.name_scope(name):
+        N, H, W, C = inputs.get_shape().as_list()
+        G = min(C, group)
+        x = tf.transpose(inputs, [0, 3, 1, 2])
+        x = tf.reshape(x, [N, G, C // G, H, W])
+        mean, var = tf.nn.moments(x, [2, 3, 4], keep_dims=True)
+        x = (x - mean) / tf.sqrt(var + esp)
+        gamma = tf.Variable(tf.ones([1, C, 1, 1]), name='gamma')
+        beta = tf.Variable(tf.zeros([1, C, 1, 1]), name='beta')
+        x = tf.reshape(x, [N, C, H, W]) * gamma + beta
+        return tf.transpose(x, [0, 2, 3, 1])
+
+
 def dropout(inputs, rate, training=True, name='dropout'):
     return tf.layers.dropout(inputs, rate, training=training, name=name)
 

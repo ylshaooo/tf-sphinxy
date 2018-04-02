@@ -11,14 +11,14 @@ import utils as ut
 
 class SphinxModel:
     key_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
-                      'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
-                      'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
-                      'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
-                      'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
+                  'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
+                  'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
+                  'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
+                  'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
 
     def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, img_size=256, hm_size=64, points=key_points,
                  batch_size=16, num_classes=5, drop_rate=0.5, learning_rate=1e-3, decay=0.96, decay_step=2000,
-                 dataset=None, training=True, w_loss=False,  num_validation=1000, logdir_train=None,
+                 dataset=None, training=True, w_loss=False, num_validation=1000, logdir_train=None,
                  logdir_test=None, name='sphinx'):
         self.nStacks = nStacks
         self.nFeats = nFeats
@@ -321,11 +321,11 @@ class SphinxModel:
 
     def _graph_resnet(self, model='resnet_50'):
         units = ut.RESNET_50_UNIT
-        if model is 'resnet_101':
+        if model == 'resnet_101':
             units = ut.RESNET_101_UNIT
-        if model is 'resnet_152':
+        if model == 'resnet_152':
             units = ut.RESNET_152_UNIT
-        if model is 'resnet_200':
+        if model == 'resnet_200':
             units = ut.RESNET_200_UNIT
         blocks = [
             ut.block('block1', ut.bottleneck, [(256, 64, 1)] * (units[0] - 1) + [(256, 64, 2)]),
@@ -341,6 +341,5 @@ class SphinxModel:
         # global average pooling
         with tf.name_scope('global_avg_pool'):
             net = tf.reduce_mean(net, [1, 2], keep_dims=True, name='net_flat')
-        prediction = ut.fc_layer(net, self.num_classes, name='fc')
         prediction = ut.fc_layer(net, self.num_classes, name='fc')
         return feature, prediction
