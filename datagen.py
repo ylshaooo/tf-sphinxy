@@ -162,21 +162,22 @@ class DataGenerator:
     # ---------------------------- Generating Methods --------------------------
 
     @staticmethod
-    def _generate_hm(height, width, points, weight):
+    def _generate_hm(img_size, hm_size, points, weight):
         """
         Generate a full Heap Map for every points in an array
-        :param height: Height for the Heat Map
-        :param width: Wanted Width for the Heat Map
+        :param img_size: Size for input image
+        :param hm_size: Size for the heat map
         :param points: Array of points
         """
         num_points = points.shape[0]
-        hm = np.zeros((height, width, num_points), dtype=np.float32)
-        new_p = points.astype(np.int32)
+        hm = np.zeros((hm_size, hm_size, num_points), dtype=np.float32)
+        new_p = np.round(points * hm_size / img_size)
+        new_p = new_p.astype(np.int32)
         for i in range(num_points):
             if not np.array_equal(new_p[i], [-1, -1]) and weight[i] == 1:
-                hm[:, :, i] = _make_one_hot((new_p[i, 1], new_p[i, 0]), (height, width))
+                hm[:, :, i] = _make_one_hot((new_p[i, 1], new_p[i, 0]), (hm_size, hm_size))
             else:
-                hm[:, :, i] = np.zeros((height, width))
+                hm[:, :, i] = np.zeros((hm_size, hm_size))
         return hm
 
     def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4,
@@ -217,7 +218,7 @@ class DataGenerator:
                 weights[i] = weight
                 img = self.open_img(name)
                 new_p = _relative_points(point, img.shape)
-                hm = self._generate_hm(hm_size, hm_size, new_p, weight)
+                hm = self._generate_hm(img_size, hm_size, new_p, weight)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
