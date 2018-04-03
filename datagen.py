@@ -196,7 +196,7 @@ class DataGenerator:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
             gt_labels = np.zeros((batch_size, num_classes), np.float32)
             gt_maps = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
-            weights = np.zeros((batch_size, len(self.points_list)), np.float32)
+            weights = np.zeros((batch_size, len(self.points_list)), np.int32)
 
             i = 0
             while i < batch_size:
