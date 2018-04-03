@@ -1,7 +1,7 @@
+import configparser
 from collections import namedtuple
 
 import tensorflow as tf
-
 
 # ---------------------------- ResNet -------------------------------
 
@@ -126,3 +126,34 @@ def dropout(inputs, rate, training=True, name='dropout'):
 
 
 # ---------------------------- Other Utils --------------------------
+
+VALID_POINTS = {
+    'blouse': [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'dress': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
+    'outwear': [1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'skirt': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
+    'trousers': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1],
+}
+
+
+def process_config(conf_file):
+    params = {}
+    config = configparser.ConfigParser()
+    config.read(conf_file)
+    for section in config.sections():
+        if section == 'DataSet':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Network':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Train':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Validation':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Saver':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+    return params

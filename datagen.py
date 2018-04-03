@@ -2,6 +2,7 @@ import math
 import os
 import random
 
+import csv
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,6 +40,15 @@ def _relative_points(points, shape):
     return points
 
 
+def _padd_offset(shape):
+    h, w, _ = shape
+    if h > w:
+        offset = [math.floor((h - w) / 2), 0]
+    else:
+        offset = [0, math.floor((w - h) / 2)]
+    return offset
+
+
 def _augment(img, hm, max_rotation=30):
     # use rotation to do data augmentation
     if random.choice([0, 1]):
@@ -65,11 +75,11 @@ def _make_one_hot(center, shape):
     one_hot = np.zeros(shape)
     one_hot[center] = 1
     return one_hot
-
+    
 
 class DataGenerator:
     def __init__(self, points_list=None, num_validation=None,
-                 img_dir=None, train_data_file=None, keep_invalid=False):
+                 img_dir=None, train_data_file=None, test_data_file=None, keep_invalid=False):
         """
         Initializer
         :param points_list: List of points considered
@@ -91,6 +101,7 @@ class DataGenerator:
         self.num_validation = num_validation
         self.img_dir = img_dir
         self.train_data_file = train_data_file
+        self.test_data_file = test_data_file
         self.images = os.listdir(img_dir)
         self.keep_invalid = keep_invalid
         self.current_train_index = 0
@@ -127,6 +138,25 @@ class DataGenerator:
                 self.data_dict[name] = {'points': points, 'label': label, 'weight': w}
                 self.train_table.append(name)
         input_file.close()
+
+    def _create_test_table(self):
+        self.test_table = []
+        self.test_data_dict = {}
+        input_file = open(self.test_data_file, 'r')
+        print('READING TEST DATA')
+
+        spamreader = csv.reader(input_file)
+        head = True
+        for row in spamreader:
+            if head:
+                head = False
+                continue
+            
+            name = row[0]
+            self.test_table.append(name)
+            self.test_data_dict[name] = {'category': row[1]}
+        
+        print('--Test set :', len(self.test_table), ' samples.')
 
     def _randomize(self):
         # randomize the set
@@ -222,7 +252,7 @@ class DataGenerator:
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
-                    images, hm = _augment(images, hm)
+                    img, hm = _augment(img, hm)
                 if normalize:
                     images[i] = img.astype(np.float32) / 255
                 else:
@@ -233,6 +263,40 @@ class DataGenerator:
                 gt_maps[i] = hm
                 i = i + 1
             yield images, gt_labels, gt_maps, weights
+
+    def test_generator(self, img_size=256, batch_size=16, normalize=True):
+        images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
+
+        num_test = len(self.test_table)
+
+        index = 0
+        while index < num_test:
+            if num_test - index > batch_size:
+                next_size = batch_size
+            else:
+                next_size = num_test - index
+                images = np.zeros((next_size, img_size, img_size, 3), np.float32)
+
+            categories = []
+            offsets = []
+            names = []
+            for i in range(next_size):
+                name = self.test_table[index]
+                img = self.open_img(name)
+                img = _pad_img(img)
+                img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
+                if normalize:
+                    images[i] = img.astype(np.float32) / 255
+                else:
+                    images[i] = img.astype(np.float32)
+
+                categories.append(self.test_data_dict[name]['category'])
+                offsets.append(_padd_offset(img.shape))
+                names.append(name)
+
+                index += 1
+                yield images, categories, offsets, names
+            
 
     # ---------------------------- Image Reader --------------------------------
 

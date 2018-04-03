@@ -1,31 +1,6 @@
-import configparser
-
 from datagen import DataGenerator
 from sphinx import SphinxModel
-
-
-def process_config(conf_file):
-    params = {}
-    config = configparser.ConfigParser()
-    config.read(conf_file)
-    for section in config.sections():
-        if section == 'DataSet':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Network':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Train':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Validation':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Saver':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-    return params
-
+from utils import process_config
 
 if __name__ == '__main__':
     print('--Parsing Config File')

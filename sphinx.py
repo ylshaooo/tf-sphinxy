@@ -18,7 +18,7 @@ class SphinxModel:
 
     def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, img_size=256, hm_size=64, points=key_points,
                  batch_size=16, num_classes=5, drop_rate=0.5, learning_rate=1e-3, decay=0.96, decay_step=2000,
-                 dataset=None, training=True, w_loss=False, num_validation=1000, logdir_train=None, test=False,
+                 dataset=None, training=True, w_loss=False, num_validation=1000, logdir_train=None,
                  logdir_test=None, name='sphinx'):
         self.nStacks = nStacks
         self.nFeats = nFeats
@@ -42,19 +42,13 @@ class SphinxModel:
         self.name = name
         self.cpu = '/cpu:0'
         self.gpu = '/gpu:0'
-        self.test = test
         self.resume = {}
 
     def generate_model(self):
         start_time = time.time()
 
-        if self.test is True:
-            self.graph_device = self.cpu
-        else:
-            self.graph_device = self.gpu
-
         print('CREATE MODEL:')
-        with tf.device(self.graph_device):
+        with tf.device(self.gpu):
             with tf.name_scope('inputs'):
                 self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
                 self.weight = tf.placeholder(tf.int32, (None, self.out_dim))
@@ -89,7 +83,7 @@ class SphinxModel:
                 )
             print('---Learning Rate : Done.')
 
-        with tf.device(self.graph_device):
+        with tf.device(self.gpu):
             with tf.name_scope('rmsprop'):
                 rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
             print('---Optimizer : Done.')
@@ -239,6 +233,7 @@ class SphinxModel:
                     self.weight: w_valid
                 }
             )
+
             batch_point_error, batch_correct_label = self._error_computation(out, lb_valid, gt_valid, w_valid)
             point_error += sum(batch_point_error)
             correct_label += batch_correct_label
@@ -248,8 +243,8 @@ class SphinxModel:
         print('--Avg. Label Error = %.2f%%', label_error * 100)
         return point_error, label_error
 
-    def predict(self, device='cpu'):
-        pass
+    def predict(self, images):
+        return self.Session.run(self.output[1], {self.img: images})
 
     def training_init(self, nEpochs=10, epoch_size=1000, save_step=500, load=None):
         """
@@ -266,6 +261,16 @@ class SphinxModel:
                 if load is not None:
                     self.saver.restore(self.Session, load)
                 self._train(nEpochs, epoch_size, save_step, self.valid_iter)
+
+    def inference_init(self, load):
+        """
+        Initialize model for inference only.
+        :param load: Model to load
+        """
+        with tf.name_scope('Session'):
+            with tf.device(self.gpu):
+                self._init_session()
+                self.saver.restore(self.Session, load)
 
     def weighted_bce_loss(self):
         bce_loss = tf.reduce_mean(
