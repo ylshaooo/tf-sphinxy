@@ -1,5 +1,5 @@
 from collections import namedtuple
-
+import configparser
 import tensorflow as tf
 
 
@@ -11,7 +11,6 @@ RESNET_50_UNIT = [3, 4, 6, 3]
 RESNET_101_UNIT = [3, 4, 23, 3]
 RESNET_152_UNIT = [3, 8, 36, 3]
 RESNET_200_UNIT = [3, 24, 36, 3]
-
 
 def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bottleneck'):
     with tf.name_scope(name):
@@ -118,3 +117,38 @@ def dropout(inputs, rate, training=True, name='dropout'):
 
 
 # ---------------------------- Other Utils --------------------------
+
+def process_config(conf_file):
+    params = {}
+    config = configparser.ConfigParser()
+    config.read(conf_file)
+    for section in config.sections():
+        if section == 'DataSet':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Network':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Train':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Validation':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+        if section == 'Saver':
+            for option in config.options(section):
+                params[option] = eval(config.get(section, option))
+    return params
+
+points_to_predict = {
+    'blouse': [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0],
+    'dress': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0,
+        0, 0],
+    'outwear': [1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0,
+        0, 0],
+    'skirt': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0,
+        0, 0],
+    'trousers': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1,
+        1, 1]
+}

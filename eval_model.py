@@ -1,31 +1,7 @@
-import configparser
+from utils import process_config
 
 from datagen import DataGenerator
 from sphinx import SphinxModel
-
-
-def process_config(conf_file):
-    params = {}
-    config = configparser.ConfigParser()
-    config.read(conf_file)
-    for section in config.sections():
-        if section == 'DataSet':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Network':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Train':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Validation':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Saver':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-    return params
-
 
 if __name__ == '__main__':
     print('--Parsing Config File')
@@ -42,7 +18,11 @@ if __name__ == '__main__':
         drop_rate=params['dropout_rate'], learning_rate=params['learning_rate'],
         decay=params['learning_rate_decay'], decay_step=params['decay_step'], training=True,
         dataset=dataset, num_validation=params['num_validation'],logdir_train=params['logdir_train'],
-        logdir_test=params['logdir_test'], w_loss=params['weighted_loss'], name=params['name'], test=True
+        logdir_test=params['logdir_test'], w_loss=params['weighted_loss'], name=params['name']
     )
     model.generate_model()
-    model.predict()
+    model.inference_init(params['load'])
+
+    valid_gen = dataset.generator(params['img_size'], params['hm_size'], params['batch_size'], params['num_classes'],
+                                  params['nstacks'], normalize=True, sample_set='valid')
+    model.valid(params['num_validation'] // params['batch_size'], valid_gen)
