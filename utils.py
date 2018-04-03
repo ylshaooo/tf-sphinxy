@@ -21,15 +21,15 @@ def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bo
         net = batch_norm(inputs, training)
         depth_in = inputs.get_shape().as_list()[3]
         if depth_in == depth:
-            shortcut = inputs
+            shortcut = sub_sample(inputs, stride)
         else:
-            shortcut = conv_layer(inputs, depth, 1, 1)
+            shortcut = conv_layer(inputs, depth, 1, stride)
 
-        net = conv_layer(net, depth_neck, 1, 1, 'conv1')
+        net = conv_layer(net, depth_neck, 1, 1, name='conv1')
         net = batch_norm(net, training)
-        net = conv_layer(net, depth_neck, 3, stride, 'conv2')
+        net = conv_layer(net, depth_neck, 3, stride, name='conv2')
         net = batch_norm(net, training)
-        net = conv_layer(net, depth, 1, 1, 'conv3')
+        net = conv_layer(net, depth, 1, 1, name='conv3')
         output = net + shortcut
         return output
 
@@ -92,6 +92,14 @@ def deconv_layer(inputs, filters, ksize, stride, activation=None, name='deconv_l
 
 def max_pool(inputs, ksize, stride, name='pool'):
     return tf.layers.max_pooling2d(inputs, ksize, stride, 'same', name=name)
+
+
+def sub_sample(inputs, stride, name='subsample'):
+    with tf.name_scope(name):
+        if stride == 1:
+            return inputs
+        else:
+            return max_pool(inputs, 1, stride)
 
 
 def batch_norm(inputs, training=True):

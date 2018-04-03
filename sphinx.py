@@ -51,8 +51,7 @@ class SphinxModel:
         with tf.device(self.gpu):
             with tf.name_scope('inputs'):
                 self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
-                if self.w_loss:
-                    self.weight = tf.placeholder(tf.float32, (None, self.out_dim))
+                self.weight = tf.placeholder(tf.float32, (None, self.out_dim))
                 self.gt_label = tf.placeholder(tf.float32, (None, self.num_classes))
                 self.gt_map = tf.placeholder(tf.float32,
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.out_dim))
@@ -104,7 +103,7 @@ class SphinxModel:
                 tf.summary.scalar('loss', self.loss, collections=['train'])
                 tf.summary.scalar('learning_rate', lr, collections=['train'])
             with tf.name_scope('summary'):
-                tf.summary.scalar('error', self.image_error, collections=['train', 'test'])
+                tf.summary.scalar('error', self.point_error, collections=['train', 'test'])
 
         self.train_op = tf.summary.merge_all('train')
         self.test_op = tf.summary.merge_all('test')
@@ -156,7 +155,7 @@ class SphinxModel:
                         else:
                             _, c, summary = self.Session.run(
                                 [self.train_rmsprop, self.loss, self.train_op],
-                                {self.img: img_train, self.gt_map: gt_train}
+                                {self.img: img_train, self.gt_label: lb_train, self.gt_map: gt_train}
                             )
                         # Save summary (Loss + Error)
                         self.train_summary.add_summary(summary, epoch * epoch_size + i)
@@ -194,13 +193,11 @@ class SphinxModel:
                 error_pred = np.array(0.0)
                 for i in range(valid_iter):
                     img_valid, lb_valid, gt_valid, w_valid = next(self.valid_gen)
-                    error_pred += self.Session.run(self.image_error,
-                                                   feed_dict={
-                                                       self.img: img_valid,
-                                                       self.gt_map: gt_valid,
-                                                       self.gt_label: lb_valid,
-                                                       self.weight: w_valid
-                                                   })
+                    error_pred += self.Session.run(
+                        self.point_error,
+                        feed_dict={self.img: img_valid, self.gt_map: gt_valid,
+                                   self.gt_label: lb_valid, self.weight: w_valid}
+                    )
                 error_pred /= valid_iter
                 print('--Avg. Error =', str((error_pred * 100)[:6], '%'))
                 self.resume['error'].append(error_pred)
@@ -242,23 +239,23 @@ class SphinxModel:
         return tf.multiply(e3, bce_loss, name='lossW')
 
     def _error_computation(self):
-        self.image_error = tf.constant(0, dtype=tf.float32)
+        self.point_error = []
         for i in range(self.batch_size):
-            self.image_error += self._error(
+            point_error = self._error(
                 self.output[1][i, self.nStacks - 1, :, :, :],
                 self.gt_label[i],
                 self.gt_map[i, self.nStacks - 1, :, :, :],
                 self.weight[i],
                 len(self.points)
             )
-        self.image_error /= tf.cast(self.batch_size, dtype = tf.float32)
 
-    def _error(self, pred, gt_label, gt_maps, weight, num_points):
+    @staticmethod
+    def _error(pred, gt_label, gt_map, weight, num_points):
         # error of one point
         def point_error():
-            pred_index = tf.where( tf.equal( pred[:, :, i], tf.reduce_max(pred[:, :, i]) ) )[0]
-            gt_index = tf.where( tf.equal( gt_maps[:, :, i], tf.constant(1) ) )[0]
-            tf.norm(tf.cast(pred_index - gt_index, dtype = tf.float32))
+            pred_index = tf.where(tf.equal(pred[:, :, i], tf.reduce_max(pred[:, :, i])))[0]
+            gt_index = tf.where(tf.equal(gt_map[:, :, i], tf.constant(1)))[0]
+            tf.norm(tf.cast(pred_index - gt_index, dtype=tf.float32))
 
         # sum up if weight != 0
         image_error = tf.constant(0, dtype=tf.float32)
@@ -268,14 +265,13 @@ class SphinxModel:
 
         # decide the normalization points
         # label {0 1 2}: [5, 6]
-        # label {3 4}: [15, 16] 
+        # label {3 4}: [15, 16]
         np_index = tf.cond(tf.less_equal(gt_label, tf.constant(2)),
-                           lambda: tf.where( tf.equal( gt_maps[:, :, 5:7], tf.constant(1) ) ),
-                           lambda: tf.where( tf.equal( gt_maps[:, :, 15:17], tf.constant(1) ) )
-                           )
+                           lambda: tf.where(tf.equal(gt_map[:, :, 5:7], tf.constant(1))),
+                           lambda: tf.where(tf.equal(gt_map[:, :, 15:17], tf.constant(1))))
 
         # normalized and weighted error
-        normalization = tf.norm(tf.cast(np_index[0,:2] - np_index[1,:2], dtype=tf.float32))
+        normalization = tf.norm(tf.cast(np_index[0, :2] - np_index[1, :2], dtype=tf.float32))
         return image_error / normalization / tf.cast(tf.reduce_sum(weight), dtype=tf.float32)
 
     def _define_saver_summary(self, summary=True):
@@ -334,7 +330,7 @@ class SphinxModel:
                         ll = ut.batch_norm(ll, self.training)
                         ll_ = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                         out = ut.conv_layer(ll, self.out_dim, 1, 1, name='out')
-                        out_[i] = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
+                        out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
                         sum_ = tf.add_n([out_, sum_, ll_], name='merge')
                         final_out.append(out)
                 with tf.name_scope('stage_' + str(self.nStacks - 1)):
