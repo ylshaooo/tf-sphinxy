@@ -104,8 +104,7 @@ class SphinxModel:
                 tf.summary.scalar('loss', self.loss, collections=['train'])
                 tf.summary.scalar('learning_rate', lr, collections=['train'])
             with tf.name_scope('summary'):
-                for i in range(len(self.points)):
-                    tf.summary.scalar(self.points[i], self.point_error[i], collections=['train', 'test'])
+                tf.summary.scalar('error', self.image_error, collections=['train', 'test'])
 
         self.train_op = tf.summary.merge_all('train')
         self.test_op = tf.summary.merge_all('test')
@@ -192,14 +191,19 @@ class SphinxModel:
                 self.resume['loss'].append(cost)
 
                 # Validation Set
-                error_array = np.array([0.0] * len(self.point_error))
+                error_pred = np.array(0.0)
                 for i in range(valid_iter):
-                    img_valid, _, gt_valid, w_valid = next(self.valid_gen)
-                    error_pred = self.Session.run(self.point_error,
-                                                  feed_dict={self.img: img_valid, self.gt_map: gt_valid})
-                    error_array += np.array(error_pred, dtype=np.float32) / valid_iter
-                print('--Avg. Error =', str((np.sum(error_array) / len(error_array)) * 100)[:6], '%')
-                self.resume['error'].append(np.sum(error_array) / len(error_array))
+                    img_valid, lb_valid, gt_valid, w_valid = next(self.valid_gen)
+                    error_pred += self.Session.run(self.image_error,
+                                                   feed_dict={
+                                                       self.img: img_valid,
+                                                       self.gt_map: gt_valid,
+                                                       self.gt_label: lb_valid,
+                                                       self.weight: w_valid
+                                                   })
+                error_pred /= valid_iter
+                print('--Avg. Error =', str((error_pred * 100)[:6], '%'))
+                self.resume['error'].append(error_pred)
                 valid_summary = self.Session.run(self.test_op, feed_dict={self.img: img_valid, self.gt_map: gt_valid})
                 self.test_summary.add_summary(valid_summary, epoch)
                 self.test_summary.flush()
@@ -238,18 +242,41 @@ class SphinxModel:
         return tf.multiply(e3, bce_loss, name='lossW')
 
     def _error_computation(self):
-        self.point_error = []
-        for i in range(len(self.points)):
-            self.point_error.append(
-                self._error(
-                    self.output[1][:, self.nStacks - 1, :, :, i],
-                    self.gt_map[:, self.nStacks - 1, :, :, i],
-                    self.batch_size
-                )
+        self.image_error = tf.constant(0, dtype=tf.float32)
+        for i in range(self.batch_size):
+            self.image_error += self._error(
+                self.output[1][i, self.nStacks - 1, :, :, :],
+                self.gt_label[i],
+                self.gt_map[i, self.nStacks - 1, :, :, :],
+                self.weight[i],
+                len(self.points)
             )
+        self.image_error /= tf.cast(self.batch_size, dtype = tf.float32)
 
-    def _error(self, pred, gt_maps, num_images):
-        pass
+    def _error(self, pred, gt_label, gt_maps, weight, num_points):
+        # error of one point
+        def point_error():
+            pred_index = tf.where( tf.equal( pred[:, :, i], tf.reduce_max(pred[:, :, i]) ) )[0]
+            gt_index = tf.where( tf.equal( gt_maps[:, :, i], tf.constant(1) ) )[0]
+            tf.norm(tf.cast(pred_index - gt_index, dtype = tf.float32))
+
+        # sum up if weight != 0
+        image_error = tf.constant(0, dtype=tf.float32)
+        for i in range(num_points):
+            image_error += tf.cond(tf.equal(weight[i], tf.constant(0)),
+                                   lambda: tf.constant(0, dtype=tf.float32), point_error)
+
+        # decide the normalization points
+        # label {0 1 2}: [5, 6]
+        # label {3 4}: [15, 16] 
+        np_index = tf.cond(tf.less_equal(gt_label, tf.constant(2)),
+                           lambda: tf.where( tf.equal( gt_maps[:, :, 5:7], tf.constant(1) ) ),
+                           lambda: tf.where( tf.equal( gt_maps[:, :, 15:17], tf.constant(1) ) )
+                           )
+
+        # normalized and weighted error
+        normalization = tf.norm(tf.cast(np_index[0,:2] - np_index[1,:2], dtype=tf.float32))
+        return image_error / normalization / tf.cast(tf.reduce_sum(weight), dtype=tf.float32)
 
     def _define_saver_summary(self, summary=True):
         if self.logdir_train is None or self.logdir_test is None:
