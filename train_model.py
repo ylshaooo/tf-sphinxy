@@ -1,10 +1,10 @@
 from datagen import DataGenerator
 from sphinx import SphinxModel
-from utils import process_config
+from utils import read_config
 
 if __name__ == '__main__':
     print('--Parsing Config File')
-    params = process_config('config.cfg')
+    params = read_config('config.cfg')
 
     print('--Creating Dataset')
     dataset = DataGenerator(params['points_list'], params['num_validation'],
@@ -21,5 +21,5 @@ if __name__ == '__main__':
         logdir_test=params['logdir_test'], w_loss=params['weighted_loss'], name=params['name']
     )
     model.generate_model()
-    model.training_init(nEpochs=params['nEpochs'], epoch_size=params['epoch_size'],
+    model.training_init(nEpochs=params['nepochs'], epoch_size=params['epoch_size'],
                         save_step=params['saver_step'], load=params['load'])

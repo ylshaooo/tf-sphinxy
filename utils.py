@@ -136,7 +136,7 @@ VALID_POINTS = {
 }
 
 
-def process_config(conf_file):
+def read_config(conf_file):
     params = {}
     config = configparser.ConfigParser()
     config.read(conf_file)

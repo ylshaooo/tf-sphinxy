@@ -1,10 +1,10 @@
 from datagen import DataGenerator
 from sphinx import SphinxModel
-from utils import process_config
+from utils import read_config
 
 if __name__ == '__main__':
     print('--Parsing Config File')
-    params = process_config('config.cfg')
+    params = read_config('config.cfg')
 
     print('--Creating Dataset')
     dataset = DataGenerator(params['points_list'], params['img_directory'], params['training_txt_file'])

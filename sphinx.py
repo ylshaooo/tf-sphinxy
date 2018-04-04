@@ -40,70 +40,64 @@ class SphinxModel:
         self.logdir_test = logdir_test
         self.w_loss = w_loss
         self.name = name
-        self.cpu = '/cpu:0'
-        self.gpu = '/gpu:0'
         self.resume = {}
 
     def generate_model(self):
         start_time = time.time()
 
         print('CREATE MODEL:')
-        with tf.device(self.gpu):
-            with tf.name_scope('inputs'):
-                self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
-                self.weight = tf.placeholder(tf.int32, (None, self.out_dim))
-                self.gt_label = tf.placeholder(tf.float32, (None, self.num_classes))
-                self.gt_map = tf.placeholder(tf.float32,
-                                             (None, self.nStacks, self.hm_size, self.hm_size, self.out_dim))
-            print('---Inputs : Done.')
-            self.output = self._graph_sphinx()
-            print('---Graph : Done.')
-            with tf.name_scope('loss'):
-                self.cls_loss = tf.reduce_mean(
-                    tf.nn.softmax_cross_entropy_with_logits(logits=self.output[0], labels=self.gt_label),
-                    name='cls_loss'
+        with tf.name_scope('inputs'):
+            self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
+            self.weight = tf.placeholder(tf.int32, (None, self.out_dim))
+            self.gt_label = tf.placeholder(tf.float32, (None, self.num_classes))
+            self.gt_map = tf.placeholder(tf.float32,
+                                         (None, self.nStacks, self.hm_size, self.hm_size, self.out_dim))
+        print('---Inputs : Done.')
+        self.output = self._graph_sphinx()
+        print('---Graph : Done.')
+        with tf.name_scope('loss'):
+            self.cls_loss = tf.reduce_mean(
+                tf.nn.softmax_cross_entropy_with_logits(logits=self.output[0], labels=self.gt_label),
+                name='cls_loss'
+            )
+            if self.w_loss:
+                self.hm_loss = tf.reduce_mean(self.weighted_bce_loss(), name='hm_loss')
+            else:
+                self.hm_loss = tf.reduce_mean(
+                    tf.nn.softmax_cross_entropy_with_logits(logits=self.output[1], labels=self.gt_map),
+                    name='hm_loss'
                 )
-                if self.w_loss:
-                    self.hm_loss = tf.reduce_mean(self.weighted_bce_loss(), name='hm_loss')
-                else:
-                    self.hm_loss = tf.reduce_mean(
-                        tf.nn.softmax_cross_entropy_with_logits(logits=self.output[1], labels=self.gt_map),
-                        name='hm_loss'
-                    )
-                self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
-            print('---Loss : Done.')
+            self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
+        print('---Loss : Done.')
 
-        with tf.device(self.cpu):
-            with tf.name_scope('steps'):
-                self.train_step = tf.Variable(0, name='global_step', trainable=False)
-            with tf.name_scope('lr'):
-                self.lr = tf.train.exponential_decay(
-                    self.learning_rate, self.train_step, self.decay_step, self.decay,
-                    staircase=True, name='learning_rate'
-                )
-            print('---Learning Rate : Done.')
+        with tf.name_scope('steps'):
+            self.train_step = tf.Variable(0, name='global_step', trainable=False)
+        with tf.name_scope('lr'):
+            self.lr = tf.train.exponential_decay(
+                self.learning_rate, self.train_step, self.decay_step, self.decay,
+                staircase=True, name='learning_rate'
+            )
+        print('---Learning Rate : Done.')
 
-        with tf.device(self.gpu):
-            with tf.name_scope('rmsprop'):
-                rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
-            print('---Optimizer : Done.')
-            with tf.name_scope('minimizer'):
-                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-                with tf.control_dependencies(update_ops):
-                    self.train_rmsprop = rmsprop.minimize(self.loss, self.train_step)
-            print('---Minimizer : Done.')
+        with tf.name_scope('rmsprop'):
+            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
+        print('---Optimizer : Done.')
+        with tf.name_scope('minimizer'):
+            update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+            with tf.control_dependencies(update_ops):
+                self.train_rmsprop = rmsprop.minimize(self.loss, self.train_step)
+        print('---Minimizer : Done.')
         self.init = tf.global_variables_initializer()
         print('---Init : Done.')
 
-        with tf.device(self.cpu):
-            with tf.name_scope('training'):
-                tf.summary.scalar('loss', self.loss, collections=['train'])
-                tf.summary.scalar('learning_rate', self.lr, collections=['train'])
-            with tf.name_scope('summary'):
-                self.point_error = tf.placeholder(tf.float32)
-                self.label_error = tf.placeholder(tf.float32)
-                tf.summary.scalar('point_error', self.point_error, collections=['train', 'test'])
-                tf.summary.scalar('label_error', self.label_error, collections=['train', 'test'])
+        with tf.name_scope('training'):
+            tf.summary.scalar('loss', self.loss, collections=['train'])
+            tf.summary.scalar('learning_rate', self.lr, collections=['train'])
+        with tf.name_scope('summary'):
+            self.point_error = tf.placeholder(tf.float32)
+            self.label_error = tf.placeholder(tf.float32)
+            tf.summary.scalar('point_error', self.point_error, collections=['train', 'test'])
+            tf.summary.scalar('label_error', self.label_error, collections=['train', 'test'])
 
         self.train_op = tf.summary.merge_all('train')
         self.test_op = tf.summary.merge_all('test')
@@ -114,10 +108,10 @@ class SphinxModel:
 
     def _train(self, nEpochs=10, epoch_size=1000, save_step=500, valid_iter=10):
         with tf.name_scope('Train'):
-            self.train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size, self.num_classes,
-                                                    self.nStacks, normalize=True, sample_set='train')
-            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size, self.num_classes,
-                                                    self.nStacks, normalize=True, sample_set='valid')
+            self.train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
+                                                    self.num_classes, self.nStacks, True, 'train')
+            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
+                                                    self.num_classes, self.nStacks, True, 'valid')
             start_time = time.time()
             self.resume['loss'] = []
             self.resume['point_error'] = []
@@ -192,8 +186,8 @@ class SphinxModel:
 
                 # Validation Set
                 point_error, label_error = self._valid(valid_iter)
-                self.resume['point_error'].append(self.point_error)
-                self.resume['label_error'].append(self.label_error)
+                self.resume['point_error'].append(point_error)
+                self.resume['label_error'].append(label_error)
                 valid_summary = self.Session.run(
                     self.test_op,
                     {self.point_error: point_error, self.label_error: label_error}
@@ -215,8 +209,8 @@ class SphinxModel:
 
     def _valid(self, valid_iter):
         if not hasattr(self, 'valid_gen'):
-            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size, self.num_classes,
-                                                    self.nStacks, normalize=True, sample_set='valid')
+            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
+                                                    self.num_classes, self.nStacks, True, 'valid')
         point_error = 0
         num_points = 0
         correct_label = 0
@@ -244,7 +238,8 @@ class SphinxModel:
         return point_error, label_error
 
     def predict(self, images):
-        return self.Session.run(self.output[1], {self.img: images})
+        prediction = self.Session.run(self.output[1], feed_dict={self.img: images})
+        return prediction
 
     def training_init(self, nEpochs=10, epoch_size=1000, save_step=500, load=None):
         """
@@ -255,12 +250,11 @@ class SphinxModel:
         :param load: Model to load (None if training from scratch)
         """
         with tf.name_scope('Session'):
-            with tf.device(self.gpu):
-                self._init_session()
-                self._define_saver_summary()
-                if load is not None:
-                    self.saver.restore(self.Session, load)
-                self._train(nEpochs, epoch_size, save_step, self.valid_iter)
+            self._init_session()
+            self._define_saver_summary()
+            if load is not None:
+                self.saver.restore(self.Session, load)
+            self._train(nEpochs, epoch_size, save_step, self.valid_iter)
 
     def inference_init(self, load):
         """
@@ -268,9 +262,8 @@ class SphinxModel:
         :param load: Model to load
         """
         with tf.name_scope('Session'):
-            with tf.device(self.gpu):
-                self._init_session()
-                self.saver.restore(self.Session, load)
+            self._init_session()
+            self.saver.restore(self.Session, load)
 
     def weighted_bce_loss(self):
         bce_loss = tf.reduce_mean(
@@ -331,17 +324,16 @@ class SphinxModel:
         if self.logdir_train is None or self.logdir_test is None:
             raise ValueError('Train/Test directory not assigned')
         else:
-            with tf.device(self.cpu):
-                self.saver = tf.train.Saver(max_to_keep=10)
+            self.saver = tf.train.Saver(max_to_keep=10)
             if summary:
-                with tf.device(self.gpu):
-                    self.train_summary = tf.summary.FileWriter(self.logdir_train, tf.get_default_graph())
-                    self.test_summary = tf.summary.FileWriter(self.logdir_test)
+                self.train_summary = tf.summary.FileWriter(self.logdir_train, tf.get_default_graph())
+                self.test_summary = tf.summary.FileWriter(self.logdir_test)
 
     def _init_session(self):
-        print('Session initialization')
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.9)
         self.Session = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+        print('Session initialization')
+
         t_start = time.time()
         self.Session.run(self.init)
         print('Sess initialized in ' + str(int(time.time() - t_start)) + ' sec.')
@@ -349,7 +341,7 @@ class SphinxModel:
     def _graph_sphinx(self):
         with tf.name_scope('model'):
             feat, cls_pred = self._graph_resnet('resnet_50')
-            feat = ut.deconv_layer(feat, self.nFeats, 1, 8, name='upsampling')
+            feat = ut.deconv_layer(feat, self.nFeats, 1, 8, name='upsample')
             hm_pred = self._graph_hourglass(feat)
             return cls_pred, hm_pred
 

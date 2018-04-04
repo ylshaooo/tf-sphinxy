@@ -31,12 +31,15 @@ def _pad_img(image):
 def _relative_points(points, shape):
     points = np.copy(points)
     h, w, _ = shape
-    if h > w:
-        offset = math.floor((h - w) / 2)
-        points[:, 0] += offset
-    else:
-        offset = math.floor((w - h) / 2)
-        points[:, 1] += offset
+    for i in range(len(points)):
+        if (points[i] == [-1, -1]).any():
+            continue
+        if h > w:
+            offset = math.floor((h - w) / 2)
+            points[i, 0] += offset
+        else:
+            offset = math.floor((w - h) / 2)
+            points[i, 1] += offset
     return points
 
 
@@ -75,7 +78,7 @@ def _make_one_hot(center, shape):
     one_hot = np.zeros(shape)
     one_hot[center] = 1
     return one_hot
-    
+
 
 class DataGenerator:
     def __init__(self, points_list=None, num_validation=None,
@@ -126,16 +129,16 @@ class DataGenerator:
             name = line[0]
             category = line[1]
             label = self.label[category]
-            points = list(map(int, line[6:]))
+            points = list(map(int, line[2:]))
             if points == [-1] * len(points):
                 self.no_intel.append(name)
             else:
                 points = np.reshape(points, (-1, 3))
-                w = points[:, 2]
+                weight = points[:, 2]
                 points = points[:, :2]
                 if not self.keep_invalid:
-                    points[np.equal(w, 0)] = [-1, -1]
-                self.data_dict[name] = {'points': points, 'label': label, 'weight': w}
+                    points[np.equal(weight, 0)] = [-1, -1]
+                self.data_dict[name] = {'points': points, 'label': label, 'weight': weight}
                 self.train_table.append(name)
         input_file.close()
 
@@ -145,17 +148,17 @@ class DataGenerator:
         input_file = open(self.test_data_file, 'r')
         print('READING TEST DATA')
 
-        spamreader = csv.reader(input_file)
+        spam_reader = csv.reader(input_file)
         head = True
-        for row in spamreader:
+        for row in spam_reader:
             if head:
                 head = False
                 continue
-            
+
             name = row[0]
             self.test_table.append(name)
             self.test_data_dict[name] = {'category': row[1]}
-        
+
         print('--Test set :', len(self.test_table), ' samples.')
 
     def _randomize(self):
@@ -174,8 +177,6 @@ class DataGenerator:
             else:
                 self.train_set.append(self.train_table[i])
         print('SET CREATED')
-        np.save('Dataset-Validation-Set', self.valid_set)
-        np.save('Dataset-Training-Set', self.train_set)
         print('--Training set :', len(self.train_set), ' samples.')
         print('--Validation set :', len(self.valid_set), ' samples.')
 
@@ -201,13 +202,10 @@ class DataGenerator:
         """
         num_points = points.shape[0]
         hm = np.zeros((hm_size, hm_size, num_points), dtype=np.float32)
-        new_p = np.round(points * hm_size / img_size)
-        new_p = new_p.astype(np.int32)
         for i in range(num_points):
-            if not np.array_equal(new_p[i], [-1, -1]) and weight[i] == 1:
-                hm[:, :, i] = _make_one_hot((new_p[i, 1], new_p[i, 0]), (hm_size, hm_size))
-            else:
-                hm[:, :, i] = np.zeros((hm_size, hm_size))
+            if not np.array_equal(points[i], [-1, -1]) and weight[i] == 1:
+                new_p = np.round(points[i] * hm_size / img_size).astype(np.int32)
+                hm[:, :, i] = _make_one_hot((new_p[1], new_p[0]), (hm_size, hm_size))
         return hm
 
     def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4,
@@ -247,8 +245,9 @@ class DataGenerator:
                 weight = np.asarray(self.data_dict[name]['weight'])
                 weights[i] = weight
                 img = self.open_img(name)
+                orig_size = max(img.shape)
                 new_p = _relative_points(point, img.shape)
-                hm = self._generate_hm(img_size, hm_size, new_p, weight)
+                hm = self._generate_hm(orig_size, hm_size, new_p, weight)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
@@ -296,23 +295,16 @@ class DataGenerator:
 
                 index += 1
                 yield images, categories, offsets, names
-            
 
     # ---------------------------- Image Reader --------------------------------
 
-    def open_img(self, name, color='RGB'):
+    def open_img(self, name):
         """
         Open an image
         :param name: Name of the sample
-        :param color: Color Mode (RGB/BGR)
         """
-        assert color in ['RGB', 'BGR'], 'Color mode supported: RGB/BGR'
         img = cv2.imread(os.path.join(self.img_dir, name))
-        if color == 'RGB':
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            return img
-        if color == 'BGR':
-            return img
+        return img
 
     def plot_img(self, name, plot='cv2'):
         """
@@ -321,10 +313,9 @@ class DataGenerator:
         :param plot: Library to use (cv2: OpenCV, plt: matplotlib)
         :return:
         """
+        img = self.open_img(name)
         if plot == 'cv2':
-            img = self.open_img(name, color='BGR')
             cv2.imshow('Image', img)
         elif plot == 'plt':
-            img = self.open_img(name, color='RGB')
             plt.imshow(img)
             plt.show()
