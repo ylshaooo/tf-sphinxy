@@ -54,7 +54,7 @@ def _augment(img, hm, max_rotation=30):
     # use rotation to do data augmentation
     if random.choice([0, 1]):
         r_angle = np.random.randint(-1 * max_rotation, max_rotation)
-        img = transform.rotate(img, r_angle, preserve_range=True)
+        img = transform.rotate(img, r_angle, cval=255, preserve_range=True)
         hm = transform.rotate(hm, r_angle)
     return img, hm
 
@@ -79,14 +79,12 @@ def _make_one_hot(center, shape):
 
 
 class DataGenerator:
-    def __init__(self, points_list=None, img_dir=None, train_data_file=None,
-                 test_data_file=None, keep_invalid=False):
+    def __init__(self, points_list=None, img_dir=None, train_data_file=None, test_data_file=None):
         """
         Initializer
         :param points_list: List of points considered
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
-        :param keep_invalid: True to keep nonexistent points
         """
         if points_list is None:
             self.points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
@@ -102,7 +100,6 @@ class DataGenerator:
         self.train_data_file = train_data_file
         self.test_data_file = test_data_file
         self.images = os.listdir(img_dir)
-        self.keep_invalid = keep_invalid
         self.current_train_index = 0
         self.current_valid_index = 0
 
@@ -117,49 +114,48 @@ class DataGenerator:
         self.train_table = []
         self.no_intel = []
         self.data_dict = {}
-        input_file = open(self.train_data_file, 'r')
-        print('READING TRAIN DATA')
-        for line in input_file:
-            line = line.strip()
-            line = line.split(' ')
-            name = line[0]
-            category = line[1]
-            label = self.label[category]
-            points = list(map(int, line[2:]))
-            if points == [-1] * len(points):
-                self.no_intel.append(name)
-            else:
-                points = np.reshape(points, (-1, 3))
-                weight = points[:, 2]
-                points = points[:, :2]
-                if not self.keep_invalid:
-                    points[np.equal(weight, 0)] = [-1, -1]
-                self.data_dict[name] = {'points': points, 'label': label, 'weight': weight}
-                self.train_table.append(name)
-        input_file.close()
+        with open(self.train_data_file, 'r') as input_file:
+            print('READING TRAIN DATA')
+            for line in input_file:
+                line = line.strip()
+                line = line.split(' ')
+                name = line[0]
+                category = line[1]
+                label = self.label[category]
+                points = list(map(int, line[2:]))
+                if points == [-1] * len(points):
+                    self.no_intel.append(name)
+                else:
+                    points = np.reshape(points, (-1, 3))
+                    weight = points[:, 2]
+                    points = points[:, :2]
+                    self.data_dict[name] = {'points': points, 'label': label, 'weight': weight}
+                    self.train_table.append(name)
 
     def _create_test_table(self):
         self.test_table = []
         self.test_data_dict = {}
-        input_file = open(self.test_data_file, 'r')
-        print('READING TEST DATA')
+        with open(self.test_data_file, 'r') as input_file:
+            print('READING TEST DATA')
+            spam_reader = csv.reader(input_file)
+            head = True
+            for row in spam_reader:
+                if head:
+                    head = False
+                    continue
 
-        spam_reader = csv.reader(input_file)
-        head = True
-        for row in spam_reader:
-            if head:
-                head = False
-                continue
-
-            name = row[0]
-            self.test_table.append(name)
-            self.test_data_dict[name] = {'category': row[1]}
+                name = row[0]
+                self.test_table.append(name)
+                self.test_data_dict[name] = {'category': row[1]}
 
         print('--Test set :', len(self.test_table), ' samples.')
 
-    def _randomize(self):
+    def randomize(self, dataset='train'):
         # randomize the set
-        random.shuffle(self.train_set)
+        if dataset == 'train':
+            random.shuffle(self.train_set)
+        if dataset == 'valid':
+            random.shuffle(self.valid_set)
 
     def _create_sets(self):
         # Select Elements to feed training and validation set
@@ -176,30 +172,29 @@ class DataGenerator:
         print('--Training set :', len(self.train_set), ' samples.')
         print('--Validation set :', len(self.valid_set), ' samples.')
 
-    def generate_set(self, rand=False):
+    def generate_set(self):
         """
         Generate the training and validation set
         :param rand: (bool) True to shuffle the set
         """
         self._create_train_table()
         self._create_sets()
-        if rand:
-            self._randomize()
 
     # ---------------------------- Generating Methods --------------------------
 
     @staticmethod
-    def _generate_hm(orig_size, hm_size, points, weight):
+    def _generate_hm(orig_size, hm_size, points, weight, keep_invisible):
         """
         Generate a full Heap Map for every points in an array
         :param orig_size: Size for the padded image
         :param hm_size: Size for the heat map
         :param points: Array of points
+        :param keep_invisible: True to keep invisible coordinates
         """
         num_points = points.shape[0]
         hm = np.zeros((hm_size, hm_size, num_points), dtype=np.float32)
         for i in range(num_points):
-            if weight[i] == 1:
+            if weight[i] == 1 or (weight[i] == 0 and keep_invisible):
                 new_p = (points[i] * hm_size / orig_size).astype(np.int32)
                 hm[:, :, i] = _make_one_hot((new_p[1], new_p[0]), (hm_size, hm_size))
         return hm
@@ -229,11 +224,13 @@ class DataGenerator:
                     self.current_train_index += 1
                     if self.current_train_index == len(self.train_set):
                         self.current_train_index = 0
+                    keep_invisible = False
                 if sample_set == 'valid':
                     name = self.valid_set[self.current_valid_index]
                     self.current_valid_index += 1
                     if self.current_valid_index == len(self.valid_set):
                         self.current_valid_index = 0
+                    keep_invisible = True
 
                 point = self.data_dict[name]['points']
                 label = self.data_dict[name]['label']
@@ -243,7 +240,11 @@ class DataGenerator:
                 img = self.open_img(name)
                 _relative_points(point, img.shape)
                 orig_size = max(img.shape)
-                hm = self._generate_hm(orig_size, hm_size, point, weight)
+                try:
+                    hm = self._generate_hm(orig_size, hm_size, point, weight, keep_invisible)
+                except:
+                    print(name)
+                    continue
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
