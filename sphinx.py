@@ -18,7 +18,7 @@ class SphinxModel:
 
     def __init__(self, nFeats=512, nStacks=4, nLow=4, out_dim=24, img_size=256, hm_size=64, points=key_points,
                  batch_size=16, num_classes=5, drop_rate=0.5, learning_rate=1e-3, decay=0.96, decay_step=2000,
-                 dataset=None, training=True, w_loss=False, num_validation=1000, logdir_train=None,
+                 dataset=None, training=True, w_loss=False, valid_iter=100, logdir_train=None,
                  logdir_test=None, name='sphinx'):
         self.nStacks = nStacks
         self.nFeats = nFeats
@@ -35,7 +35,7 @@ class SphinxModel:
         self.decay_step = decay_step
         self.nLow = nLow
         self.dataset = dataset
-        self.valid_iter = num_validation // batch_size
+        self.valid_iter = valid_iter
         self.logdir_train = logdir_train
         self.logdir_test = logdir_test
         self.w_loss = w_loss
@@ -96,8 +96,8 @@ class SphinxModel:
         with tf.name_scope('summary'):
             self.point_error = tf.placeholder(tf.float32)
             self.label_error = tf.placeholder(tf.float32)
-            tf.summary.scalar('point_error', self.point_error, collections=['train', 'test'])
-            tf.summary.scalar('label_error', self.label_error, collections=['train', 'test'])
+            tf.summary.scalar('point_error', self.point_error, collections=['test'])
+            tf.summary.scalar('label_error', self.label_error, collections=['test'])
 
         self.train_op = tf.summary.merge_all('train')
         self.test_op = tf.summary.merge_all('test')
@@ -121,17 +121,16 @@ class SphinxModel:
                 epoch_start_time = time.time()
                 avg_cost = 0.
                 cost = 0.
-                print('Epoch :' + str(epoch) + '/' + str(nEpochs) + '\n')
+                print('Epoch :' + str(epoch + 1) + '/' + str(nEpochs) + '\n')
 
                 # Training Set
                 for i in range(epoch_size):
                     percent = ((i + 1) / epoch_size) * 100
                     num = np.int(20 * percent / 100)
-                    time2end = int((time.time() - epoch_start_time) * (100 - percent) / percent)
                     sys.stdout.write(
                         '\r Train: {0}>'.format("=" * num) + "{0}>".format(" " * (20 - num)) + '||' +
-                        str(percent)[:4] + '%' + ' -cost: ' + str(cost)[:6] + ' -avg_loss: ' +
-                        str(avg_cost)[:5] + ' -timeToEnd: ' + str(time2end) + ' sec.'
+                        ' -cost: ' + str(cost)[:6] + ' -avg_loss: ' + str(avg_cost)[:5] +
+                        ' -completion: ' + str(i + 1) + '/' + str(epoch_size)
                     )
                     sys.stdout.flush()
 
@@ -173,12 +172,11 @@ class SphinxModel:
                             )
 
                     cost += c
-                    avg_cost += c / epoch_size
+                    avg_cost = cost / (i + 1)
                 epoch_finish_time = time.time()
 
-                print('Epoch ' + str(epoch) + '/' + str(nEpochs) + ' done in ' + str(
-                    int(epoch_finish_time - epoch_start_time)) + ' sec.' + ' -avg_time/batch: ' + str(
-                    ((epoch_finish_time - epoch_start_time) / epoch_size))[:4] + ' sec.')
+                print('\nEpoch done in ' + str(int(epoch_finish_time - epoch_start_time)) + ' sec.' +
+                      ' -avg_time/batch: ' + str(((epoch_finish_time - epoch_start_time) / epoch_size))[:4] + ' sec.')
                 with tf.name_scope('save'):
                     self.saver.save(self.Session,
                                     os.path.join('checkpoints/', str(self.name + '_' + str(epoch + 1))))
@@ -208,15 +206,13 @@ class SphinxModel:
             print('  Training Time: ' + str(datetime.timedelta(seconds=time.time() - start_time)))
 
     def _valid(self, valid_iter):
-        if not hasattr(self, 'valid_gen'):
-            self.valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
-                                                    self.num_classes, self.nStacks, True, 'valid')
         point_error = 0
         num_points = 0
         correct_label = 0
         for it in range(valid_iter):
             img_valid, lb_valid, gt_valid, w_valid = next(self.valid_gen)
             num_points += np.sum(w_valid)
+            print('num_points:', num_points)
 
             out = self.Session.run(
                 self.output,
@@ -229,12 +225,16 @@ class SphinxModel:
             )
 
             batch_point_error, batch_correct_label = self._error_computation(out, lb_valid, gt_valid, w_valid)
+            print(batch_correct_label)
             point_error += sum(batch_point_error)
+            print('point error:', point_error)
             correct_label += batch_correct_label
+            print('correct label:', correct_label)
+        print(num_points)
         point_error = point_error / num_points
         label_error = 1 - correct_label / (valid_iter * self.batch_size)
-        print('--Avg. Point Error = %.2f%%', point_error * 100)
-        print('--Avg. Label Error = %.2f%%', label_error * 100)
+        print('--Avg. Point Error = %.2f%%' % (point_error * 100))
+        print('--Avg. Label Error = %.2f%%' % (label_error * 100))
         return point_error, label_error
 
     def predict(self, images):
@@ -312,12 +312,15 @@ class SphinxModel:
         # select the normalization points
         # label {0 1 2}: [5, 6]
         # label {3 4}: [15, 16]
-        gt_label = tf.argmax(gt_label)
+        gt_label = np.argmax(gt_label)
         if gt_label <= 2:
-            norm_idx = np.where(gt_map[:, :, 5:7] == 1)[:2]
+            norm_idx1 = np.array(np.where(gt_map[:, :, 5] == 1))
+            norm_idx2 = np.array(np.where(gt_map[:, :, 6] == 1))
         else:
-            norm_idx = np.where(gt_map[:, :, 15:17] == 1)[:2]
-        norm_dist = np.linalg.norm(norm_idx[:, 1] - norm_idx[:, 0])
+            norm_idx1 = np.array(np.where(gt_map[:, :, 15] == 1))
+            norm_idx2 = np.array(np.where(gt_map[:, :, 16] == 1))
+        norm_dist = np.linalg.norm(norm_idx2 - norm_idx1)
+        print('norm dist:', norm_dist)
         return total_dist / norm_dist
 
     def _define_saver_summary(self, summary=True):

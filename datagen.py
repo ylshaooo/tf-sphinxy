@@ -29,7 +29,6 @@ def _pad_img(image):
 
 
 def _relative_points(points, shape):
-    points = np.copy(points)
     h, w, _ = shape
     for i in range(len(points)):
         if (points[i] == [-1, -1]).any():
@@ -40,15 +39,14 @@ def _relative_points(points, shape):
         else:
             offset = math.floor((w - h) / 2)
             points[i, 1] += offset
-    return points
 
 
-def _padd_offset(shape):
+def _padding_offset(shape):
     h, w, _ = shape
     if h > w:
-        offset = [math.floor((h - w) / 2), 0]
+        offset = (math.floor((h - w) / 2), 0)
     else:
-        offset = [0, math.floor((w - h) / 2)]
+        offset = (0, math.floor((w - h) / 2))
     return offset
 
 
@@ -81,12 +79,11 @@ def _make_one_hot(center, shape):
 
 
 class DataGenerator:
-    def __init__(self, points_list=None, num_validation=None,
-                 img_dir=None, train_data_file=None, test_data_file=None, keep_invalid=False):
+    def __init__(self, points_list=None, img_dir=None, train_data_file=None,
+                 test_data_file=None, keep_invalid=False):
         """
         Initializer
         :param points_list: List of points considered
-        :param num_validation: Number of image to use in validation
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
         :param keep_invalid: True to keep nonexistent points
@@ -101,7 +98,6 @@ class DataGenerator:
             self.points_list = points_list
         self.label = {'blouse': 0, 'dress': 1, 'outwear': 2, 'skirt': 3, 'trousers': 4}
 
-        self.num_validation = num_validation
         self.img_dir = img_dir
         self.train_data_file = train_data_file
         self.test_data_file = test_data_file
@@ -193,18 +189,18 @@ class DataGenerator:
     # ---------------------------- Generating Methods --------------------------
 
     @staticmethod
-    def _generate_hm(img_size, hm_size, points, weight):
+    def _generate_hm(orig_size, hm_size, points, weight):
         """
         Generate a full Heap Map for every points in an array
-        :param img_size: Size for input image
+        :param orig_size: Size for the padded image
         :param hm_size: Size for the heat map
         :param points: Array of points
         """
         num_points = points.shape[0]
         hm = np.zeros((hm_size, hm_size, num_points), dtype=np.float32)
         for i in range(num_points):
-            if not np.array_equal(points[i], [-1, -1]) and weight[i] == 1:
-                new_p = np.round(points[i] * hm_size / img_size).astype(np.int32)
+            if weight[i] == 1:
+                new_p = (points[i] * hm_size / orig_size).astype(np.int32)
                 hm[:, :, i] = _make_one_hot((new_p[1], new_p[0]), (hm_size, hm_size))
         return hm
 
@@ -245,9 +241,9 @@ class DataGenerator:
                 weight = np.asarray(self.data_dict[name]['weight'])
                 weights[i] = weight
                 img = self.open_img(name)
+                _relative_points(point, img.shape)
                 orig_size = max(img.shape)
-                new_p = _relative_points(point, img.shape)
-                hm = self._generate_hm(orig_size, hm_size, new_p, weight)
+                hm = self._generate_hm(orig_size, hm_size, point, weight)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
@@ -267,7 +263,6 @@ class DataGenerator:
         images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
 
         num_test = len(self.test_table)
-
         index = 0
         while index < num_test:
             if num_test - index > batch_size:
@@ -290,9 +285,8 @@ class DataGenerator:
                     images[i] = img.astype(np.float32)
 
                 categories.append(self.test_data_dict[name]['category'])
-                offsets.append(_padd_offset(img.shape))
+                offsets.append(_padding_offset(img.shape))
                 names.append(name)
-
                 index += 1
                 yield images, categories, offsets, names
 

@@ -7,8 +7,7 @@ if __name__ == '__main__':
     params = read_config('config.cfg')
 
     print('--Creating Dataset')
-    dataset = DataGenerator(params['points_list'], params['num_validation'],
-                            params['img_directory'], params['training_txt_file'])
+    dataset = DataGenerator(params['points_list'], params['img_directory'], params['training_txt_file'])
     dataset.generate_set(rand=True)
 
     model = SphinxModel(
@@ -17,7 +16,7 @@ if __name__ == '__main__':
         points=params['points_list'], batch_size=params['batch_size'], num_classes=params['num_classes'],
         drop_rate=params['dropout_rate'], learning_rate=params['learning_rate'],
         decay=params['learning_rate_decay'], decay_step=params['decay_step'], training=True,
-        dataset=dataset, num_validation=params['num_validation'],logdir_train=params['logdir_train'],
+        dataset=dataset, valid_iter=params['valid_iter'], logdir_train=params['logdir_train'],
         logdir_test=params['logdir_test'], w_loss=params['weighted_loss'], name=params['name']
     )
     model.generate_model()
