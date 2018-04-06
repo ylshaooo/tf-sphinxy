@@ -55,15 +55,15 @@ class SphinxModel:
         self.output = self._graph_sphinx()
         print('---Graph : Done.')
         with tf.name_scope('loss'):
-            self.cls_loss = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(logits=self.output[0], labels=self.gt_label),
-                name='cls_loss'
+            self.loss = tf.reduce_mean(
+                tf.nn.softmax_cross_entropy_with_logits(logits=self.output, labels=self.gt_label),
+                name='loss'
             )
-            self.hm_loss = tf.reduce_mean(
-                tf.nn.softmax_cross_entropy_with_logits(logits=self.output[1], labels=self.gt_map),
-                name='hm_loss'
-            )
-            self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
+            # self.hm_loss = tf.reduce_mean(
+            #     tf.nn.softmax_cross_entropy_with_logits(logits=self.output[1], labels=self.gt_map),
+            #     name='hm_loss'
+            # )
+            # self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
@@ -87,13 +87,13 @@ class SphinxModel:
         print('---Init : Done.')
 
         with tf.name_scope('training'):
-            tf.summary.scalar('cls_loss', self.cls_loss, collections=['train'])
-            tf.summary.scalar('hm_loss', self.hm_loss, collections=['train'])
+            tf.summary.scalar('loss', self.loss, collections=['train'])
+            # tf.summary.scalar('hm_loss', self.hm_loss, collections=['train'])
             tf.summary.scalar('learning_rate', self.lr, collections=['train'])
         with tf.name_scope('summary'):
             self.point_error = tf.placeholder(tf.float32)
             self.label_error = tf.placeholder(tf.float32)
-            tf.summary.scalar('point_error', self.point_error, collections=['valid'])
+            # tf.summary.scalar('point_error', self.point_error, collections=['valid'])
             tf.summary.scalar('label_error', self.label_error, collections=['valid'])
 
         self.train_op = tf.summary.merge_all('train')
@@ -133,7 +133,7 @@ class SphinxModel:
                     sys.stdout.flush()
 
                     img_train, lb_train, gt_train, w_train = next(self.train_gen)
-                    if i % self.save_step == 0:
+                    if i % self.saver_step == 0:
                         _, c, summary = self.Session.run(
                             [self.train_rmsprop, self.loss, self.train_op],
                             {self.img: img_train, self.gt_label: lb_train, self.gt_map: gt_train}
@@ -159,12 +159,12 @@ class SphinxModel:
                 self.resume['loss'].append(cost)
 
                 # Validation Set
-                point_error, label_error = self._valid(self.valid_iter)
-                self.resume['point_error'].append(point_error)
+                label_error = self._valid()
+                # self.resume['point_error'].append(point_error)
                 self.resume['label_error'].append(label_error)
                 valid_summary = self.Session.run(
                     self.valid_op,
-                    {self.point_error: point_error, self.label_error: label_error}
+                    {self.label_error: label_error}
                 )
                 self.valid_summary.add_summary(valid_summary, epoch)
                 self.valid_summary.flush()
@@ -184,12 +184,12 @@ class SphinxModel:
                 (self.resume['label_error'][0] - self.resume['label_error'][-1]) * 100) + '%')
             print('  Training Time: ' + str(datetime.timedelta(seconds=time.time() - start_time)))
 
-    def _valid(self, valid_iter):
-        point_error = 0
+    def _valid(self):
+        # point_error = 0
         num_points = 0
         correct_label = 0
         self.dataset.randomize('valid')
-        for it in range(valid_iter):
+        for it in range(self.valid_iter):
             img_valid, lb_valid, gt_valid, w_valid = next(self.valid_gen)
             num_points += np.sum(w_valid == 1)
 
@@ -197,21 +197,21 @@ class SphinxModel:
                 self.output,
                 feed_dict={
                     self.img: img_valid,
-                    self.gt_map: gt_valid,
-                    self.gt_label: lb_valid,
+                    # self.gt_map: gt_valid,
+                    # self.gt_label: lb_valid,
                 }
             )
 
-            batch_point_error, batch_correct_label = self._error_computation(out, lb_valid, gt_valid, w_valid)
-            point_error += sum(batch_point_error)
-            print('point error:', point_error)
+            batch_correct_label = self._error_computation(out, lb_valid, gt_valid, w_valid)
+            # point_error += sum(batch_point_error)
+            # print('point error:', point_error)
             correct_label += batch_correct_label
             print('correct label:', correct_label)
-        point_error = point_error / num_points
-        label_error = 1 - correct_label / (valid_iter * self.batch_size)
-        print('--Avg. Point Error = %.2f%%' % (point_error * 100))
+        # point_error = point_error / num_points
+        label_error = 1 - correct_label / (self.valid_iter * self.batch_size)
+        # print('--Avg. Point Error = %.2f%%' % (point_error * 100))
         print('--Avg. Label Error = %.2f%%' % (label_error * 100))
-        return point_error, label_error
+        return label_error
 
     def _test(self):
         test_gen = self.dataset.test_generator(self.img_size, self.batch_size, True)
@@ -276,24 +276,24 @@ class SphinxModel:
 
     def _error_computation(self, output, gt_label, gt_map, weight):
         # point distances for every image in batch
-        batch_point_error = []
-        for i in range(self.batch_size):
-            batch_point_error.append(
-                self._error(
-                    output[1][i, self.nStacks - 1, :, :, :],
-                    gt_label[i],
-                    gt_map[i, self.nStacks - 1, :, :, :],
-                    weight[i],
-                )
-            )
+        # batch_point_error = []
+        # for i in range(self.batch_size):
+        #     batch_point_error.append(
+        #         self._error(
+        #             output[1][i, self.nStacks - 1, :, :, :],
+        #             gt_label[i],
+        #             gt_map[i, self.nStacks - 1, :, :, :],
+        #             weight[i],
+        #         )
+        #     )
 
         # label correct count for this batch
-        pred_label = np.argmax(output[0], axis=1)
+        pred_label = np.argmax(output, axis=1)
         gt_label = np.argmax(gt_label, axis=1)
         correct_label = np.count_nonzero(pred_label == gt_label)
         print('pred_label:', pred_label)
         print('correct_label:', correct_label)
-        return batch_point_error, correct_label
+        return correct_label
 
     def _error(self, pred, gt_label, gt_map, weight):
         """
@@ -345,8 +345,8 @@ class SphinxModel:
         with tf.name_scope('model'):
             feat, cls_pred = self._graph_resnet('resnet_50')
             feat = ut.deconv_layer(feat, self.nFeats, 1, 8, name='upsample')
-            hm_pred = self._graph_hourglass(feat)
-            return cls_pred, hm_pred
+            # hm_pred = self._graph_hourglass(feat)
+            return cls_pred
 
     def _graph_hourglass(self, feature):
         with tf.name_scope('hourglass'):
