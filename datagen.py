@@ -1,7 +1,7 @@
 import math
 import os
 import random
-
+from copy import copy
 import csv
 import cv2
 import matplotlib.pyplot as plt
@@ -30,15 +30,16 @@ def _pad_img(image):
 
 def _relative_points(points, shape):
     h, w, _ = shape
-    for i in range(len(points)):
-        if (points[i] == [-1, -1]).any():
+    new_p = copy(points)
+    for i in range(len(new_p)):
+        if (new_p[i] == [-1, -1]).any():
             continue
         if h > w:
             offset = math.floor((h - w) / 2)
-            points[i, 0] += offset
+            new_p[i, 0] += offset
         else:
             offset = math.floor((w - h) / 2)
-            points[i, 1] += offset
+            new_p[i, 1] += offset
 
 
 def _padding_offset(shape):
