@@ -1,9 +1,9 @@
 class Config:
     # Dataset
-    img_dir = 'data/train/Images'
-    test_img_dir = 'data/test/Images'
-    training_txt_file = 'data/train/dataset.txt'
-    test_txt_file = 'data/test/test.csv'
+    train_img_dir = 'data/train/Images'
+    test_img_dir = 'data/test'
+    train_data_file = 'data/train/dataset.txt'
+    test_data_file = 'data/test/test.csv'
     test_output_file = 'result.csv'
 
     # Network
@@ -21,20 +21,19 @@ class Config:
                    'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
 
     # Train
-    batch_size = 12
-    nEpochs = 40
+    batch_size = 8
+    nEpochs = 30
     epoch_size = 4000
     learning_rate = 0.001
-    learning_rate_decay = 0.94
+    learning_rate_decay = 0.93
     decay_step = 2000
-    dropout_rate = 0.4
+    dropout_rate = 0.3
 
     # Validation
     valid_iter = 360
 
     # Saver
-    logdir_train = 'logs/train'
-    logdir_valid = 'logs/valid'
-    saver_step = 500
+    logdir = 'logs'
+    save_step = 100
     saver_dir = 'checkpoints'
-    load = None
+    load = 'checkpoints/sphinx_28'

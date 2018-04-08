@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage import transform
 
+from config import Config
+
 
 # -------------------- Image Processing Utils --------------------
 
@@ -29,16 +31,18 @@ def _pad_img(image):
 
 
 def _relative_points(points, shape):
+    new_p = np.copy(points)
     h, w, _ = shape
-    for i in range(len(points)):
-        if (points[i] == [-1, -1]).any():
+    for i in range(len(new_p)):
+        if (new_p[i] == [-1, -1]).any():
             continue
         if h > w:
             offset = math.floor((h - w) / 2)
-            points[i, 0] += offset
+            new_p[i, 0] += offset
         else:
             offset = math.floor((w - h) / 2)
-            points[i, 1] += offset
+            new_p[i, 1] += offset
+    return new_p
 
 
 def _padding_offset(shape):
@@ -59,14 +63,14 @@ def _augment(img, hm, max_rotation=30):
     return img, hm
 
 
-def _make_gaussian(height, width, center, sigma=3):
+def _make_gaussian(hm_size, center, sigma=3):
     """
     Make a square gaussian kernel.
     size is the length of a side of the square
     sigma is full-width-half-maximum, which can be thought of as an effective radius.
     """
-    x = np.arange(0, width, 1, np.float32)
-    y = np.arange(0, height, 1, np.float32)[:, np.newaxis]
+    x = np.arange(0, hm_size, 1, np.float32)
+    y = np.arange(0, hm_size, 1, np.float32)[:, np.newaxis]
     x0 = center[0]
     y0 = center[1]
     return np.exp(-4 * np.log(2) * ((x - x0) ** 2 + (y - y0) ** 2) / sigma ** 2)
@@ -79,27 +83,27 @@ def _make_one_hot(center, shape):
 
 
 class DataGenerator:
-    def __init__(self, points_list=None, img_dir=None, train_data_file=None, test_data_file=None):
+    def __init__(self, cfg: Config):
         """
         Initializer
         :param points_list: List of points considered
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
         """
-        if points_list is None:
+        if cfg.points_list is None:
             self.points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                                 'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                                 'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
                                 'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                                 'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
         else:
-            self.points_list = points_list
+            self.points_list = cfg.points_list
         self.label = {'blouse': 0, 'dress': 1, 'outwear': 2, 'skirt': 3, 'trousers': 4}
 
-        self.img_dir = img_dir
-        self.train_data_file = train_data_file
-        self.test_data_file = test_data_file
-        self.images = os.listdir(img_dir)
+        self.train_img_dir = cfg.train_img_dir
+        self.test_img_dir = cfg.test_img_dir
+        self.train_data_file = cfg.train_data_file
+        self.test_data_file = cfg.test_data_file
         self.current_train_index = 0
         self.current_valid_index = 0
 
@@ -132,8 +136,8 @@ class DataGenerator:
                     self.data_dict[name] = {'points': points, 'label': label, 'weight': weight}
                     self.train_table.append(name)
 
-    def _create_test_table(self):
-        self.test_table = []
+    def _create_test_set(self):
+        self.test_set = []
         self.test_data_dict = {}
         with open(self.test_data_file, 'r') as input_file:
             print('READING TEST DATA')
@@ -145,10 +149,9 @@ class DataGenerator:
                     continue
 
                 name = row[0]
-                self.test_table.append(name)
+                self.test_set.append(name)
                 self.test_data_dict[name] = {'category': row[1]}
-
-        print('--Test set :', len(self.test_table), ' samples.')
+        print('--Test set :', len(self.test_set), ' samples.')
 
     def randomize(self, dataset='train'):
         # randomize the set
@@ -172,13 +175,16 @@ class DataGenerator:
         print('--Training set :', len(self.train_set), ' samples.')
         print('--Validation set :', len(self.valid_set), ' samples.')
 
-    def generate_set(self):
+    def generate_set(self, train=True):
         """
-        Generate the training and validation set
-        :param rand: (bool) True to shuffle the set
+        Generate the dataset
+        :param train: (bool) True to generate training table
         """
-        self._create_train_table()
-        self._create_sets()
+        if train:
+            self._create_train_table()
+            self._create_sets()
+        else:
+            self._create_test_set()
 
     # ---------------------------- Generating Methods --------------------------
 
@@ -196,11 +202,10 @@ class DataGenerator:
         for i in range(num_points):
             if weight[i] == 1 or (weight[i] == 0 and keep_invisible):
                 new_p = (points[i] * hm_size / orig_size).astype(np.int32)
-                hm[:, :, i] = _make_one_hot((new_p[1], new_p[0]), (hm_size, hm_size))
+                hm[:, :, i] = _make_gaussian(hm_size, (new_p[1], new_p[0]))
         return hm
 
-    def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4,
-                  normalize=True, sample_set='train'):
+    def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4, sample_set='train'):
         """
         Batch Generator
         :param num_classes: Number of classes
@@ -208,8 +213,7 @@ class DataGenerator:
         :param img_size: Size of image
         :param batch_size: Number of images per batch
         :param stacks: Number of stacks/module in the network
-        :param normalize: True to return Image Value between 0 and 1
-        :param sample_set: 'train'/'valid' Default: 'train'
+        :param sample_set: train/valid Default: 'train'
         """
         while True:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
@@ -237,22 +241,15 @@ class DataGenerator:
                 gt_labels[i] = _make_one_hot(label, num_classes)
                 weight = np.asarray(self.data_dict[name]['weight'])
                 weights[i] = weight
-                img = self.open_img(name)
-                _relative_points(point, img.shape)
+                img = self.open_img(self.train_img_dir, name)
+                new_p = _relative_points(point, img.shape)
                 orig_size = max(img.shape)
-                try:
-                    hm = self._generate_hm(orig_size, hm_size, point, weight, keep_invisible)
-                except:
-                    print(name)
-                    continue
+                hm = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
                     img, hm = _augment(img, hm)
-                if normalize:
-                    images[i] = img.astype(np.float32) / 255
-                else:
-                    images[i] = img.astype(np.float32)
+                images[i] = img.astype(np.float32) / 255
 
                 hm = np.expand_dims(hm, axis=0)
                 hm = np.repeat(hm, stacks, axis=0)
@@ -260,45 +257,44 @@ class DataGenerator:
                 i = i + 1
             yield images, gt_labels, gt_maps, weights
 
-    def test_generator(self, img_size=256, batch_size=16, normalize=True):
+    def test_generator(self, img_size=256, batch_size=16):
         images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
 
-        num_test = len(self.test_table)
-        index = 0
-        while index < num_test:
-            if num_test - index > batch_size:
+        num_test = len(self.test_set)
+        idx = 0
+        while idx < num_test:
+            if num_test - idx >= batch_size:
                 next_size = batch_size
             else:
-                next_size = num_test - index
+                next_size = num_test - idx
                 images = np.zeros((next_size, img_size, img_size, 3), np.float32)
 
             categories = []
             offsets = []
             names = []
             for i in range(next_size):
-                name = self.test_table[index]
-                img = self.open_img(name)
+                name = self.test_set[idx]
+                img = self.open_img(self.test_img_dir, name)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
-                if normalize:
-                    images[i] = img.astype(np.float32) / 255
-                else:
-                    images[i] = img.astype(np.float32)
+                images[i] = img.astype(np.float32) / 255
 
                 categories.append(self.test_data_dict[name]['category'])
                 offsets.append(_padding_offset(img.shape))
                 names.append(name)
-                index += 1
-                yield images, categories, offsets, names
+                idx += 1
+            yield images, categories, offsets, names
 
     # ---------------------------- Image Reader --------------------------------
 
-    def open_img(self, name):
+    @staticmethod
+    def open_img(img_dir, name):
         """
         Open an image
+        :param img_dir: Directory of images
         :param name: Name of the sample
         """
-        img = cv2.imread(os.path.join(self.img_dir, name))
+        img = cv2.imread(os.path.join(img_dir, name))
         return img
 
     def plot_img(self, name, plot='cv2'):
