@@ -63,7 +63,7 @@ class SphinxModel:
             #     tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.gt_map),
             #     name='hm_loss'
             # )
-            self.hm_loss = self._weighted_loss()
+            self.hm_loss = tf.reduce_mean(self._weighted_loss(), name='hm_loss')
             # self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
         print('---Loss : Done.')
 
@@ -111,7 +111,7 @@ class SphinxModel:
             weight = tf.expand_dims(weight, 1)
             weight = tf.expand_dims(weight, 1)
             weight = tf.tile(weight, [1, self.nStacks, self.hm_size, self.hm_size, 1])
-            loss = tf.multiply(loss, weight, name='weighted_hm_loss')
+            loss = tf.multiply(loss, weight, name='weighted_out')
             return loss
 
     def _train(self, data_gen):
@@ -139,11 +139,11 @@ class SphinxModel:
                 )
                 sys.stdout.flush()
 
-                img_train, _, gt_train, w_train = next(data_gen[0])
+                img_train, _, hm_train, w_train = next(data_gen[0])
                 if i % self.save_step == 0:
                     _, c, summary = self.Session.run(
                         [self.train_rmsprop, self.hm_loss, self.train_op],
-                        {self.img: img_train, self.gt_map: gt_train, self.weight: w_train}
+                        {self.img: img_train, self.gt_map: hm_train, self.weight: w_train}
                     )
                     # Save summary (Loss + Error)
                     self.train_summary.add_summary(summary, epoch * self.epoch_size + i)
@@ -151,7 +151,7 @@ class SphinxModel:
                 else:
                     _, c, = self.Session.run(
                         [self.train_rmsprop, self.hm_loss],
-                        {self.img: img_train, self.gt_map: gt_train, self.weight: w_train}
+                        {self.img: img_train, self.gt_map: hm_train, self.weight: w_train}
                     )
                 cost += c
                 avg_cost = cost / (i + 1)
@@ -203,9 +203,7 @@ class SphinxModel:
 
             out = self.Session.run(
                 self.output,
-                feed_dict={
-                    self.img: img_valid,
-                }
+                {self.img: img_valid}
             )
 
             batch_point_error = self._error_computation(out, lb_valid, gt_valid, w_valid)
@@ -224,7 +222,7 @@ class SphinxModel:
             spam_writer = csv.writer(outfile)
             # Traversal the test set
             for _ in tqdm(range(len(self.dataset.test_set) // self.batch_size + 1)):
-                images, categories, offsets, names = next(data_gen)
+                images, categories, offsets, names, sizes = next(data_gen)
                 hms = self.predict(images)[:, self.nStacks - 1, :, :, :]
 
                 # Formatting to lines
@@ -233,15 +231,16 @@ class SphinxModel:
                     offset = offsets[i]
                     category = categories[i]
                     name = names[i]
+                    size = sizes[i]
 
                     write_line = [name, category]
                     for j in range(self.num_points):
                         if ut.VALID_POSITION[category][j] is 1:
                             # Calculate predictions from heat map
                             index = np.unravel_index(hm[:, :, j].argmax(), (self.hm_size, self.hm_size))
-                            point = np.array(index) / self.hm_size * self.img_size
+                            point = np.array(index) / self.hm_size * size
                             point -= offset
-                            write_line.append(str(round(point[0])) + '_' + str(round(point[1])) + '_1')
+                            write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
                         else:
                             write_line.append('-1_-1_-1')
                     spam_writer.writerow(write_line)
@@ -255,18 +254,18 @@ class SphinxModel:
             self._init_session()
             self._define_saver_summary()
             if self.load is not None:
-                self.saver.restore(self.Session, self.load)
+                self.saver.restore(self.Session, os.path.join(self.saver_dir, self.load))
             train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
-                                                    self.num_classes, self.nStacks, 'train')
+                                               self.num_classes, self.nStacks, 'train')
             valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
-                                                    self.num_classes, self.nStacks, 'valid')
+                                               self.num_classes, self.nStacks, 'valid')
             data_gen = (train_gen, valid_gen)
             self._train(data_gen)
 
     def inference(self):
         with tf.name_scope('Session'):
             self._init_session()
-            self.saver.restore(self.Session, self.load)
+            self.saver.restore(self.Session, os.path.join(self.saver_dir, self.load))
             test_gen = self.dataset.test_generator(self.img_size, self.batch_size)
             self._test(test_gen)
 

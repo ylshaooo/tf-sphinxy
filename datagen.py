@@ -272,18 +272,20 @@ class DataGenerator:
             categories = []
             offsets = []
             names = []
+            sizes = []
             for i in range(next_size):
                 name = self.test_set[idx]
                 img = self.open_img(self.test_img_dir, name)
                 img = _pad_img(img)
-                img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
-                images[i] = img.astype(np.float32) / 255
 
                 categories.append(self.test_data_dict[name]['category'])
                 offsets.append(_padding_offset(img.shape))
                 names.append(name)
+                sizes.append(max(img.shape))
+                img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
+                images[i] = img.astype(np.float32) / 255
                 idx += 1
-            yield images, categories, offsets, names
+            yield images, categories, offsets, names, sizes
 
     # ---------------------------- Image Reader --------------------------------
 

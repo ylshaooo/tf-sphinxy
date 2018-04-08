@@ -36,4 +36,4 @@ class Config:
     logdir = 'logs'
     save_step = 100
     saver_dir = 'checkpoints'
-    load = 'checkpoints/sphinx_28'
+    load = None
