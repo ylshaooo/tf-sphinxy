@@ -109,15 +109,15 @@ def batch_norm(inputs, training=True):
 
 def group_norm(inputs, group=16, esp=1e-5, name='group_norm'):
     with tf.name_scope(name):
-        N, H, W, C = inputs.get_shape().as_list()
-        G = min(C, group)
+        n, h, w, c = inputs.get_shape().as_list()
+        g = min(c, group)
         x = tf.transpose(inputs, [0, 3, 1, 2])
-        x = tf.reshape(x, [N, G, C // G, H, W])
+        x = tf.reshape(x, [n, g, c // g, h, w])
         mean, var = tf.nn.moments(x, [2, 3, 4], keep_dims=True)
         x = (x - mean) / tf.sqrt(var + esp)
-        gamma = tf.Variable(tf.ones([1, C, 1, 1]), name='gamma')
-        beta = tf.Variable(tf.zeros([1, C, 1, 1]), name='beta')
-        x = tf.reshape(x, [N, C, H, W]) * gamma + beta
+        gamma = tf.Variable(tf.ones([1, c, 1, 1]), name='gamma')
+        beta = tf.Variable(tf.zeros([1, c, 1, 1]), name='beta')
+        x = tf.reshape(x, [n, c, h, w]) * gamma + beta
         return tf.transpose(x, [0, 2, 3, 1])
 
 
@@ -127,33 +127,10 @@ def dropout(inputs, rate, training=True, name='dropout'):
 
 # ---------------------------- Other Utils --------------------------
 
-VALID_POINTS = {
+VALID_POSITION = {
     'blouse': [1, 1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     'dress': [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0],
     'outwear': [1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     'skirt': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0],
     'trousers': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1],
 }
-
-
-def read_config(conf_file):
-    params = {}
-    config = configparser.ConfigParser()
-    config.read(conf_file)
-    for section in config.sections():
-        if section == 'DataSet':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Network':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Train':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Validation':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-        if section == 'Saver':
-            for option in config.options(section):
-                params[option] = eval(config.get(section, option))
-    return params
