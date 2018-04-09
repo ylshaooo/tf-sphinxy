@@ -25,7 +25,7 @@ class Config:
     nEpochs = 30
     epoch_size = 4000
     learning_rate = 0.001
-    learning_rate_decay = 0.92
+    learning_rate_decay = 0.93
     decay_step = 2000
     dropout_rate = 0.3
 
@@ -33,7 +33,7 @@ class Config:
     valid_iter = 360
 
     # Saver
-    logdir_train = 'logs/train'
+    logdir = 'logs'
     save_step = 100
     saver_dir = 'checkpoints'
-    load = 'checkpoints/sphinx_28'
+    load = None
