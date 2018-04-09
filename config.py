@@ -25,7 +25,7 @@ class Config:
     nEpochs = 40
     epoch_size = 4000
     learning_rate = 0.001
-    learning_rate_decay = 0.94
+    learning_rate_decay = 0.93
     decay_step = 2000
     dropout_rate = 0.3
 
