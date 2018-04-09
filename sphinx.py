@@ -42,7 +42,6 @@ class SphinxModel:
             self.start_epoch = 0
         else:
             self.start_epoch = int(self.load.split('_')[1])
-        print(self.start_epoch)
 
         self.dataset = dataset
         self.is_training = True
@@ -60,7 +59,7 @@ class SphinxModel:
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
                 self.weight = tf.placeholder(tf.float32, (None, self.num_points))
         print('---Inputs : Done.')
-        self.output = self._graph_sphinx()
+        self.output = self._graph_hourglass()
         print('---Graph : Done.')
 
         end_time = time.time()
@@ -71,16 +70,7 @@ class SphinxModel:
 
         print('CREATE GRAPH:')
         with tf.name_scope('loss'):
-            # self.cls_loss = tf.reduce_mean(
-            #     tf.nn.softmax_cross_entropy_with_logits(logits=self.output[0], labels=self.gt_label),
-            #     name='cls_loss'
-            # )
-            # self.hm_loss = tf.reduce_mean(
-            #     tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.gt_map),
-            #     name='hm_loss'
-            # )
             self.hm_loss = tf.reduce_mean(self._weighted_loss(), name='hm_loss')
-            # self.loss = tf.add(self.cls_loss, self.hm_loss, name='loss')
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
@@ -346,17 +336,10 @@ class SphinxModel:
                             write_line.append('-1_-1_-1')
                     spam_writer.writerow(write_line)
 
-    def _graph_sphinx(self):
-        with tf.name_scope('model'):
-            # feat, cls_pred = self._graph_resnet('resnet_50')
-            # feat = ut.deconv_layer(feat, self.nFeats, 1, 8, name='upsample')
-            return self._graph_hourglass()
-
     def _graph_hourglass(self):
-        with tf.name_scope('hourglass'):
-            net = ut.conv_layer(self.img, 64, 6, 2, name='conv1')
-            net = ut.batch_norm(net, self.is_training)
-            net = ut.bottleneck(net, 128, 32, 1, self.is_training, name='res1')
+        with tf.name_scope('model'):
+            net = ut.conv_layer_bn(self.img, 64, 6, 2, self.is_training, name='conv1')
+            net = ut.bottleneck(net, 128, stride=1, training=self.is_training, name='res1')
             net = ut.max_pool(net, 2, 2, 'max_pool')
             net = ut.bottleneck(net, int(self.nFeats / 2), stride=1, training=self.is_training, name='res2')
             net = ut.bottleneck(net, self.nFeats, stride=1, training=self.is_training, name='res3')
@@ -367,55 +350,26 @@ class SphinxModel:
                 with tf.name_scope('stage_0'):
                     hg = ut.hourglass(net, self.nLow, self.nFeats, 'hourglass')
                     drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
-                    ll = ut.conv_layer(drop, self.nFeats, 1, 1)
-                    ll = ut.batch_norm(ll, self.is_training)
-                    ll_ = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
+                    ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
+                    ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                     out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                    out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
-                    sum_ = tf.add_n([out_, net, ll_], name='merge')
+                    out_ = ut.conv_layer_bn(out, self.nFeats, 1, 1, self.is_training, name='out_')
+                    sum_ = tf.add_n([out_, net, ll], name='merge')
                     final_out.append(out)
                 for i in range(1, self.nStacks - 1):
                     with tf.name_scope('stage_' + str(i)):
                         hg = ut.hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
                         drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
-                        ll = ut.conv_layer(drop, self.nFeats, 1, 1, name='conv')
-                        ll = ut.batch_norm(ll, self.is_training)
-                        ll_ = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
+                        ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
+                        ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                         out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                        out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
-                        sum_ = tf.add_n([out_, sum_, ll_], name='merge')
+                        out_ = ut.conv_layer_bn(out, self.nFeats, 1, 1, self.is_training, name='out_')
+                        sum_ = tf.add_n([out_, sum_, ll], name='merge')
                         final_out.append(out)
                 with tf.name_scope('stage_' + str(self.nStacks - 1)):
                     hg = ut.hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
                     drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
-                    ll = ut.conv_layer(drop, self.nFeats, 1, 1, name='conv')
-                    ll = ut.batch_norm(ll, self.is_training)
+                    ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
                     out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
                     final_out.append(out)
             return tf.stack(final_out, axis=1, name='output')
-
-    def _graph_resnet(self, model='resnet_50'):
-        with tf.name_scope('resnet'):
-            units = ut.RESNET_50_UNIT
-            if model == 'resnet_101':
-                units = ut.RESNET_101_UNIT
-            if model == 'resnet_152':
-                units = ut.RESNET_152_UNIT
-            if model == 'resnet_200':
-                units = ut.RESNET_200_UNIT
-            blocks = [
-                ut.block('block1', ut.bottleneck, [(256, 64, 1)] * (units[0] - 1) + [(256, 64, 2)]),
-                ut.block('block2', ut.bottleneck, [(512, 128, 1)] * (units[1] - 1) + [(512, 128, 2)]),
-                ut.block('block3', ut.bottleneck, [(1024, 256, 1)] * (units[2] - 1) + [(1024, 256, 2)]),
-                ut.block('block4', ut.bottleneck, [(2048, 512, 1)] * units[3])
-            ]
-
-            net = ut.conv_layer(self.img, 64, 7, 2, name='conv')
-            net = ut.max_pool(net, 3, 2)
-            net = ut.stack_block_dense(net, blocks, self.is_training)
-            feature = net
-            # global average pooling
-            with tf.name_scope('global_avg_pool'):
-                net = tf.reduce_mean(net, [1, 2], keep_dims=False, name='net_flat')
-            prediction = ut.fc_layer(net, self.num_classes, name='fc')
-            return feature, prediction

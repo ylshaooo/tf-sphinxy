@@ -16,7 +16,7 @@ RESNET_200_UNIT = [3, 24, 36, 3]
 def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bottleneck'):
     with tf.name_scope(name):
         if depth_neck is None:
-            depth_neck = depth / 4
+            depth_neck = depth / 2
 
         net = batch_norm(inputs, training)
         depth_in = inputs.get_shape().as_list()[3]
@@ -25,10 +25,8 @@ def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bo
         else:
             shortcut = conv_layer(inputs, depth, 1, stride)
 
-        net = conv_layer(net, depth_neck, 1, 1, name='conv1')
-        net = batch_norm(net, training)
-        net = conv_layer(net, depth_neck, 3, stride, name='conv2')
-        net = batch_norm(net, training)
+        net = conv_layer_bn(net, depth_neck, 1, 1, training, name='conv1')
+        net = conv_layer_bn(net, depth_neck, 3, stride, training, name='conv2')
         net = conv_layer(net, depth, 1, 1, name='conv3')
         output = net + shortcut
         return output
@@ -86,6 +84,12 @@ def conv_layer(inputs, filters, ksize=1, stride=1, name='conv_layer'):
                                 kernel_initializer=xavier_initializer())
 
 
+def conv_layer_bn(inputs, filters, ksize=1, stride=1, training=True, name='conv_layer'):
+    net = conv_layer(inputs, filters, ksize, stride, name=name)
+    net = batch_norm(net, training)
+    return net
+
+
 def deconv_layer(inputs, filters, ksize, stride, name='deconv_layer'):
     with tf.name_scope(name):
         return tf.layers.conv2d_transpose(inputs, filters, ksize, (stride, stride), 'same',
@@ -105,7 +109,7 @@ def sub_sample(inputs, stride, name='subsample'):
 
 
 def batch_norm(inputs, training=True):
-    inputs = tf.layers.batch_normalization(inputs, momentum=0.997, epsilon=1e-5, training=training, fused=True)
+    inputs = tf.layers.batch_normalization(inputs, momentum=0.9, epsilon=1e-5, training=training, fused=True)
     return tf.nn.relu(inputs)
 
 
