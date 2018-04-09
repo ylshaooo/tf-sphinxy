@@ -1,7 +1,7 @@
-import configparser
 from collections import namedtuple
 
 import tensorflow as tf
+from tensorflow.contrib.layers import xavier_initializer
 
 # ---------------------------- ResNet -------------------------------
 
@@ -75,19 +75,21 @@ def hourglass(inputs, units, depth, name='hourglass'):
 
 # ---------------------- Basic Network Module -----------------------
 
-def fc_layer(inputs, num_out, activation=None, name='fc_layer'):
+def fc_layer(inputs, num_out, name='fc_layer'):
     with tf.name_scope(name):
-        return tf.layers.dense(inputs, num_out, activation)
+        return tf.layers.dense(inputs, num_out)
 
 
-def conv_layer(inputs, filters, ksize=1, stride=1, activation=None, name='conv_layer'):
+def conv_layer(inputs, filters, ksize=1, stride=1, name='conv_layer'):
     with tf.name_scope(name):
-        return tf.layers.conv2d(inputs, filters, ksize, (stride, stride), 'same', activation=activation)
+        return tf.layers.conv2d(inputs, filters, ksize, (stride, stride), 'same',
+                                kernel_initializer=xavier_initializer())
 
 
-def deconv_layer(inputs, filters, ksize, stride, activation=None, name='deconv_layer'):
+def deconv_layer(inputs, filters, ksize, stride, name='deconv_layer'):
     with tf.name_scope(name):
-        return tf.layers.conv2d_transpose(inputs, filters, ksize, (stride, stride), 'same', activation=activation)
+        return tf.layers.conv2d_transpose(inputs, filters, ksize, (stride, stride), 'same',
+                                          kernel_initializer=xavier_initializer())
 
 
 def max_pool(inputs, ksize, stride, name='pool'):

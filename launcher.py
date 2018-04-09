@@ -24,14 +24,15 @@ def main():
 
     dataset.generate_set(train=True if mode == 'train' else False)
     model = SphinxModel(cfg, dataset)
-    model.generate_model()
     if mode == 'train':
+        model.generate_model(True)
         model.training()
     else:
+        model.generate_model(False)
         model.inference()
 
 
 if __name__ == '__main__':
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     main()
