@@ -67,7 +67,7 @@ def hourglass(inputs, units, depth, name='hourglass'):
             net = bottleneck(net, depth, name='low_2')
 
         net = bottleneck(net, depth, name='low_3')
-        up_2 = tf.image.resize_bilinear(net, tf.shape(net)[1:3] * 2, name='upsampling')
+        up_2 = tf.image.resize_nearest_neighbor(net, tf.shape(net)[1:3] * 2, name='upsampling')
         return tf.add_n([up_2, up_1], name='out_hg')
 
 
@@ -111,20 +111,6 @@ def sub_sample(inputs, stride, name='subsample'):
 def batch_norm(inputs, training=True):
     inputs = tf.layers.batch_normalization(inputs, momentum=0.9, epsilon=1e-5, training=training, fused=True)
     return tf.nn.relu(inputs)
-
-
-def group_norm(inputs, group=16, esp=1e-5, name='group_norm'):
-    with tf.name_scope(name):
-        n, h, w, c = inputs.get_shape().as_list()
-        g = min(c, group)
-        x = tf.transpose(inputs, [0, 3, 1, 2])
-        x = tf.reshape(x, [n, g, c // g, h, w])
-        mean, var = tf.nn.moments(x, [2, 3, 4], keep_dims=True)
-        x = (x - mean) / tf.sqrt(var + esp)
-        gamma = tf.Variable(tf.ones([1, c, 1, 1]), name='gamma')
-        beta = tf.Variable(tf.zeros([1, c, 1, 1]), name='beta')
-        x = tf.reshape(x, [n, c, h, w]) * gamma + beta
-        return tf.transpose(x, [0, 2, 3, 1])
 
 
 def dropout(inputs, rate, training=True, name='dropout'):

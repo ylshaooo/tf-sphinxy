@@ -90,8 +90,6 @@ class SphinxModel:
         print('---Minimizer : Done.')
         self.init = tf.global_variables_initializer()
         print('---Init : Done.')
-        self.saver = tf.train.Saver(max_to_keep=10)
-        print('---Saver : Done.')
 
         with tf.name_scope('training'):
             # tf.summary.scalar('cls_loss', self.cls_loss, collections=['train'])
@@ -192,6 +190,7 @@ class SphinxModel:
     def _init_variable(self):
         t_start = time.time()
         print('Variable initialization')
+        self.saver = tf.train.Saver(max_to_keep=10)
         if self.load is None:
             self.Session.run(self.init)
         else:
