@@ -348,7 +348,7 @@ class SphinxModel:
                     ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
                     ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                     out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                    out_ = ut.conv_layer_bn(out, self.nFeats, 1, 1, self.is_training, name='out_')
+                    out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
                     sum_ = tf.add_n([out_, net, ll], name='merge')
                     final_out.append(out)
                 for i in range(1, self.nStacks - 1):
@@ -358,7 +358,7 @@ class SphinxModel:
                         ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
                         ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                         out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                        out_ = ut.conv_layer_bn(out, self.nFeats, 1, 1, self.is_training, name='out_')
+                        out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
                         sum_ = tf.add_n([out_, sum_, ll], name='merge')
                         final_out.append(out)
                 with tf.name_scope('stage_' + str(self.nStacks - 1)):
