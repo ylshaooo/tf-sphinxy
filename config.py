@@ -24,7 +24,7 @@ class Config:
     batch_size = 8
     nEpochs = 60
     epoch_size = 4000
-    learning_rate = 0.001
+    learning_rate = 0.0001
     learning_rate_decay = 0.96
     decay_step = 2000
     dropout_rate = 0.3
@@ -36,4 +36,4 @@ class Config:
     logdir = 'logs'
     save_step = 100
     saver_dir = 'checkpoints'
-    load = None
+    load = 'sphinx_32'
