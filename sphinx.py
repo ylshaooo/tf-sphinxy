@@ -75,9 +75,13 @@ class SphinxModel:
 
         with tf.name_scope('steps'):
             self.train_step = tf.Variable(0, name='global_step', trainable=False)
+        with tf.name_scope('lr'):
+            self.lr = tf.train.exponential_decay(self.learning_rate, self.train_step, self.decay_step, self.decay,
+                                                 staircase=True, name='learning_rate')
+        print('---Learning Rate : Done.')
 
         with tf.name_scope('rmsprop'):
-            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
+            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
         print('---Optimizer : Done.')
         with tf.name_scope('minimizer'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
