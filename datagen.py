@@ -202,7 +202,7 @@ class DataGenerator:
         for i in range(num_points):
             if weight[i] == 1 or (weight[i] == 0 and keep_invisible):
                 new_p = (points[i] * hm_size / orig_size).astype(np.int32)
-                hm[:, :, i] = _make_gaussian(hm_size, (new_p[1], new_p[0]))
+                hm[:, :, i] = _make_gaussian(hm_size, (new_p[0], new_p[1]))
         return hm
 
     def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4, sample_set='train'):

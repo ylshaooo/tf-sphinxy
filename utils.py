@@ -16,7 +16,7 @@ RESNET_200_UNIT = [3, 24, 36, 3]
 def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bottleneck'):
     with tf.name_scope(name):
         if depth_neck is None:
-            depth_neck = depth / 2
+            depth_neck = depth / 4
 
         net = batch_norm(inputs, training)
         depth_in = inputs.get_shape().as_list()[3]

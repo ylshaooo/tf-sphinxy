@@ -75,9 +75,13 @@ class SphinxModel:
 
         with tf.name_scope('steps'):
             self.train_step = tf.Variable(0, name='global_step', trainable=False)
+        with tf.name_scope('lr'):
+            self.lr = tf.train.exponential_decay(self.learning_rate, self.train_step, self.decay_step, self.decay,
+                                                 staircase=True, name='learning_rate')
+        print('---Learning Rate : Done.')
 
         with tf.name_scope('rmsprop'):
-            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.learning_rate)
+            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
         print('---Optimizer : Done.')
         with tf.name_scope('minimizer'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -88,14 +92,11 @@ class SphinxModel:
         print('---Init : Done.')
 
         with tf.name_scope('training'):
-            # tf.summary.scalar('cls_loss', self.cls_loss, collections=['train'])
             tf.summary.scalar('hm_loss', self.hm_loss, collections=['train'])
-            tf.summary.scalar('learning_rate', self.learning_rate, collections=['train'])
+            tf.summary.scalar('learning_rate', self.lr, collections=['train'])
         with tf.name_scope('summary'):
             self.point_error = tf.placeholder(tf.float32)
-            # self.label_error = tf.placeholder(tf.float32)
             tf.summary.scalar('point_error', self.point_error, collections=['valid'])
-            # tf.summary.scalar('label_error', self.label_error, collections=['valid'])
 
         self.train_op = tf.summary.merge_all('train')
         self.valid_op = tf.summary.merge_all('valid')
@@ -129,10 +130,6 @@ class SphinxModel:
                 )
             )
 
-        # label correct count for this batch
-        # pred_label = np.argmax(output[0], axis=1)
-        # gt_label = np.argmax(gt_label, axis=1)
-        # correct_label = np.count_nonzero(pred_label == gt_label)
         return batch_point_error
 
     def _error(self, pred, gt_label, gt_map, weight):
@@ -252,7 +249,6 @@ class SphinxModel:
             # Validation Set
             point_error = self._valid(valid_gen)
             self.resume['point_error'].append(point_error)
-            # self.resume['label_error'].append(label_error)
             valid_summary = self.Session.run(
                 self.valid_op,
                 {self.point_error: point_error}
@@ -271,8 +267,6 @@ class SphinxModel:
         print('  Relative Loss: %.2f%%' % 100 * self.resume['loss'][-1] / (self.resume['loss'][0] + 0.1))
         print('  Relative Improvement - Point: %.2f%%' %
             (self.resume['point_error'][0] - self.resume['point_error'][-1]) * 100)
-        # print('  Relative Improvement - Label: ' + str(
-        #     (self.resume['label_error'][0] - self.resume['label_error'][-1]) * 100) + '%')
         print('  Training Time: ' + str(datetime.timedelta(seconds=int(time.time() - start_time))))
 
     def _valid(self, data_gen):
@@ -292,11 +286,8 @@ class SphinxModel:
 
             batch_point_error = self._error_computation(out, lb_valid, gt_valid, w_valid)
             point_error += sum(batch_point_error)
-            # correct_label += batch_correct_label
         point_error = point_error / num_points
-        # label_error = 1 - correct_label / (self.valid_iter * self.batch_size)
         print('--Avg. Point Error = %.2f%%' % (point_error * 100))
-        # print('--Avg. Label Error = %.2f%%' % (label_error * 100))
         return point_error
 
     def _test(self):
@@ -326,7 +317,7 @@ class SphinxModel:
                             index = np.unravel_index(hm[:, :, j].argmax(), (self.hm_size, self.hm_size))
                             point = np.array(index) / self.hm_size * size
                             point -= offset
-                            write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
+                            write_line.append(str(int(round(point[1]))) + '_' + str(int(round(point[0]))) + '_1')
                         else:
                             write_line.append('-1_-1_-1')
                     spam_writer.writerow(write_line)
