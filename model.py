@@ -55,8 +55,10 @@ class SphinxModel:
             self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
             if train:
                 self.gt_label = tf.placeholder(tf.float32, (None, self.num_classes))
-                self.gt_map = tf.placeholder(tf.float32,
+                self.gt_hm0 = tf.placeholder(tf.float32,
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
+                self.gt_hm1 = tf.placeholder(tf.float32, (None, self.hm_size * 2, self.hm_size * 2, self.num_points))
+                self.gt_hm2 = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, self.num_points))
                 self.weight = tf.placeholder(tf.float32, (None, self.num_points))
         print('---Inputs : Done.')
         self.output = self._graph_hourglass()
@@ -70,7 +72,10 @@ class SphinxModel:
 
         print('CREATE GRAPH:')
         with tf.name_scope('loss'):
-            self.hm_loss = tf.reduce_mean(self._weighted_loss(), name='hm_loss')
+            self.loss0 = tf.reduce_mean(self._weighted_loss(self.output[0], self.gt_hm0, 0), name='stack_loss')
+            self.loss1 = tf.reduce_mean(self._weighted_loss(self.output[1], self.gt_hm1, 1), name='up1_loss')
+            self.loss2 = tf.reduce_mean(self._weighted_loss(self.output[2], self.gt_hm2, 2), name='up2_loss')
+            self.loss = tf.add_n([self.loss0, self.loss1, self.loss2], name='total_loss')
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
@@ -86,13 +91,13 @@ class SphinxModel:
         with tf.name_scope('minimizer'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
             with tf.control_dependencies(update_ops):
-                self.train_rmsprop = rmsprop.minimize(self.hm_loss, self.train_step)
+                self.train_rmsprop = rmsprop.minimize(self.loss, self.train_step)
         print('---Minimizer : Done.')
         self.init = tf.global_variables_initializer()
         print('---Init : Done.')
 
         with tf.name_scope('training'):
-            tf.summary.scalar('hm_loss', self.hm_loss, collections=['train'])
+            tf.summary.scalar('loss', self.loss, collections=['train'])
             tf.summary.scalar('learning_rate', self.lr, collections=['train'])
         with tf.name_scope('summary'):
             self.point_error = tf.placeholder(tf.float32)
@@ -106,14 +111,19 @@ class SphinxModel:
         end_time = time.time()
         print('Graph created in ' + str(int(end_time - start_time)) + ' sec.')
 
-    def _weighted_loss(self):
-        with tf.name_scope('weighted_loss'):
-            loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=self.output, labels=self.gt_map)
+    def _weighted_loss(self, logits, gt_hm, step):
+        with tf.name_scope('weighted_loss_' + str(step)):
+            loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=gt_hm)
             weight = tf.cast(tf.equal(self.weight, 1), tf.float32)
             weight = tf.expand_dims(weight, 1)
             weight = tf.expand_dims(weight, 1)
-            weight = tf.expand_dims(weight, 1)
-            weight = tf.tile(weight, [1, self.nStacks, self.hm_size, self.hm_size, 1])
+            if step == 0:
+                weight = tf.expand_dims(weight, 1)
+                weight = tf.tile(weight, [1, self.nStacks, self.hm_size, self.hm_size, 1])
+            if step == 1:
+                weight = tf.tile(weight, [1, self.hm_size * 2, self.hm_size * 2, 1])
+            if step == 2:
+                weight = tf.tile(weight, [1, self.img_size, self.img_size, 1])
             loss = tf.multiply(loss, weight, name='weighted_out')
             return loss
 
@@ -123,9 +133,9 @@ class SphinxModel:
         for i in range(self.batch_size):
             batch_point_error.append(
                 self._error(
-                    output[i, self.nStacks - 1, :, :, :],
+                    output[i, :, :, :],
                     gt_label[i],
-                    gt_map[i, self.nStacks - 1, :, :, :],
+                    gt_map[i, :, :, :],
                     weight[i],
                 )
             )
@@ -220,19 +230,31 @@ class SphinxModel:
                 )
                 sys.stdout.flush()
 
-                img_train, _, hm_train, w_train = next(train_gen)
+                img_train, _, hm0_train, hm1_train, hm2_train, w_train = next(train_gen)
                 if i % self.save_step == 0:
                     _, c, summary = self.Session.run(
-                        [self.train_rmsprop, self.hm_loss, self.train_op],
-                        {self.img: img_train, self.gt_map: hm_train, self.weight: w_train}
+                        [self.train_rmsprop, self.loss, self.train_op],
+                        {
+                            self.img: img_train,
+                            self.gt_hm0: hm0_train,
+                            self.gt_hm1: hm1_train,
+                            self.gt_hm2: hm2_train,
+                            self.weight: w_train
+                         }
                     )
                     # Save summary (Loss + Error)
                     self.train_summary.add_summary(summary, epoch * self.epoch_size + i)
                     self.train_summary.flush()
                 else:
                     _, c, = self.Session.run(
-                        [self.train_rmsprop, self.hm_loss],
-                        {self.img: img_train, self.gt_map: hm_train, self.weight: w_train}
+                        [self.train_rmsprop, self.loss],
+                        {
+                            self.img: img_train,
+                            self.gt_hm0: hm0_train,
+                            self.gt_hm1: hm1_train,
+                            self.gt_hm2: hm2_train,
+                            self.weight: w_train
+                        }
                     )
                 cost += c
                 avg_cost = cost / (i + 1)
@@ -276,7 +298,7 @@ class SphinxModel:
         # correct_label = 0
         self.dataset.randomize('valid')
         for it in range(self.valid_iter):
-            img_valid, lb_valid, gt_valid, w_valid = next(data_gen)
+            img_valid, lb_valid, _, _, hm2_valid, w_valid = next(data_gen)
             num_points += np.sum(w_valid == 1)
 
             out = self.Session.run(
@@ -284,7 +306,7 @@ class SphinxModel:
                 {self.img: img_valid}
             )
 
-            batch_point_error = self._error_computation(out, lb_valid, gt_valid, w_valid)
+            batch_point_error = self._error_computation(out[2], lb_valid, hm2_valid, w_valid)
             point_error += sum(batch_point_error)
         point_error = point_error / num_points
         print('--Avg. Point Error = %.2f%%' % (point_error * 100))
@@ -315,47 +337,45 @@ class SphinxModel:
                         if ut.VALID_POSITION[category][j] is 1:
                             # Calculate predictions from heat map
                             index = np.unravel_index(hm[:, :, j].argmax(), (self.hm_size, self.hm_size))
+                            index = (index[1], index[0])
                             point = np.array(index) / self.hm_size * size
                             point -= offset
-                            write_line.append(str(int(round(point[1]))) + '_' + str(int(round(point[0]))) + '_1')
+                            write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
                         else:
                             write_line.append('-1_-1_-1')
                     spam_writer.writerow(write_line)
 
     def _graph_hourglass(self):
         with tf.name_scope('model'):
-            net = ut.conv_layer_bn(self.img, 64, 6, 2, self.is_training, name='conv1')
+            net = ut.conv_layer(self.img, 64, 7, 2, name='conv1')
             net = ut.bottleneck(net, 128, stride=1, training=self.is_training, name='res1')
             net = ut.max_pool(net, 2, 2, 'max_pool')
             net = ut.bottleneck(net, int(self.nFeats / 2), stride=1, training=self.is_training, name='res2')
             net = ut.bottleneck(net, self.nFeats, stride=1, training=self.is_training, name='res3')
-            # net = tf.add(net, feature, name='feat_merge')
 
-            final_out = []
             with tf.name_scope('stacks'):
+                stack_out = []
                 with tf.name_scope('stage_0'):
                     hg = ut.hourglass(net, self.nLow, self.nFeats, 'hourglass')
                     drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
                     ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
-                    ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                     out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
                     out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
-                    sum_ = tf.add_n([out_, net, ll], name='merge')
-                    final_out.append(out)
-                for i in range(1, self.nStacks - 1):
+                    sum_ = tf.add(net, out_, name='merge')
+                    stack_out.append(out)
+                for i in range(1, self.nStacks):
                     with tf.name_scope('stage_' + str(i)):
                         hg = ut.hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
                         drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
                         ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
-                        ll = ut.conv_layer(ll, self.nFeats, 1, 1, name='ll')
                         out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                        out_ = ut.conv_layer(out, self.nFeats, 1, 1, name='out_')
-                        sum_ = tf.add_n([out_, sum_, ll], name='merge')
-                        final_out.append(out)
-                with tf.name_scope('stage_' + str(self.nStacks - 1)):
-                    hg = ut.hourglass(sum_, self.nLow, self.nFeats, 'hourglass')
-                    drop = ut.dropout(hg, self.dropout_rate, self.is_training, 'dropout')
-                    ll = ut.conv_layer_bn(drop, self.nFeats, 1, 1, self.is_training)
-                    out = ut.conv_layer(ll, self.num_points, 1, 1, name='out')
-                    final_out.append(out)
-            return tf.stack(final_out, axis=1, name='output')
+                        out_ = ut.conv_layer(ll, self.nFeats, 1, 1, name='out_')
+                        sum_ = tf.add(sum_, out_, name='merge')
+                        stack_out.append(out)
+            with tf.name_scope('upsampling'):
+                net = ut.batch_norm(sum_, self.is_training)
+                net = ut.conv_layer_bn(net, self.nFeats, 3, 1, self.is_training)
+                up1 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_1')
+                net = ut.conv_layer_bn(up1, self.nFeats, 3, 1, self.is_training)
+                up2 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_2')
+            return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2

@@ -1,17 +1,8 @@
-from collections import namedtuple
-
 import tensorflow as tf
 from tensorflow.contrib.layers import xavier_initializer
 
-# ---------------------------- ResNet -------------------------------
 
-block = namedtuple('Bottleneck', ['name', 'unit_fn', 'args'])
-
-RESNET_50_UNIT = [3, 4, 6, 3]
-RESNET_101_UNIT = [3, 4, 23, 3]
-RESNET_152_UNIT = [3, 8, 36, 3]
-RESNET_200_UNIT = [3, 24, 36, 3]
-
+# ---------------------------- Hourglass ----------------------------
 
 def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bottleneck'):
     with tf.name_scope(name):
@@ -31,19 +22,6 @@ def bottleneck(inputs, depth, depth_neck=None, stride=1, training=True, name='bo
         output = net + shortcut
         return output
 
-
-def stack_block_dense(inputs, blocks, training):
-    net = inputs
-    for b in blocks:
-        with tf.name_scope(b.name):
-            for i, unit in enumerate(b.args):
-                with tf.name_scope('unit_%d' % (i + 1)):
-                    depth, depth_neck, stride = unit
-                    net = b.unit_fn(net, depth, depth_neck, stride, training)
-    return net
-
-
-# ---------------------------- Hourglass ----------------------------
 
 def hourglass(inputs, units, depth, name='hourglass'):
     """

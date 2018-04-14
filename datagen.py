@@ -54,13 +54,15 @@ def _padding_offset(shape):
     return offset
 
 
-def _augment(img, hm, max_rotation=30):
+def _augment(img, hm0, hm1, hm2, max_rotation=30):
     # use rotation to do data augmentation
     if random.choice([0, 1]):
         r_angle = np.random.randint(-1 * max_rotation, max_rotation)
         img = transform.rotate(img, r_angle, cval=255, preserve_range=True)
-        hm = transform.rotate(hm, r_angle)
-    return img, hm
+        hm0 = transform.rotate(hm0, r_angle)
+        hm1 = transform.rotate(hm1, r_angle)
+        hm2 = transform.rotate(hm2, r_angle)
+    return img, hm0, hm1, hm2
 
 
 def _make_gaussian(hm_size, center, sigma=3):
@@ -218,10 +220,13 @@ class DataGenerator:
         while True:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
             gt_labels = np.zeros((batch_size, num_classes), np.float32)
-            gt_maps = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
+            gt_hms0 = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
+            gt_hms1 = np.zeros((batch_size, hm_size * 2, hm_size * 2, len(self.points_list)), np.float32)
+            gt_hms2 = np.zeros((batch_size, img_size, img_size, len(self.points_list)), np.float32)
             weights = np.zeros((batch_size, len(self.points_list)), np.int32)
 
             i = 0
+            keep_invisible = False
             while i < batch_size:
                 if sample_set == 'train':
                     name = self.train_set[self.current_train_index]
@@ -244,18 +249,22 @@ class DataGenerator:
                 img = self.open_img(self.train_img_dir, name)
                 new_p = _relative_points(point, img.shape)
                 orig_size = max(img.shape)
-                hm = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible)
+                hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible)
+                hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible)
+                hm2 = self._generate_hm(orig_size, img_size, new_p, weight, keep_invisible)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
-                    img, hm = _augment(img, hm)
+                    img, hm0, hm1, hm2 = _augment(img, hm0, hm1, hm2)
                 images[i] = img.astype(np.float32) / 255
 
-                hm = np.expand_dims(hm, axis=0)
-                hm = np.repeat(hm, stacks, axis=0)
-                gt_maps[i] = hm
+                hm0 = np.expand_dims(hm0, axis=0)
+                hm0 = np.repeat(hm0, stacks, axis=0)
+                gt_hms0[i] = hm0
+                gt_hms1[i] = hm1
+                gt_hms2[i] = hm2
                 i = i + 1
-            yield images, gt_labels, gt_maps, weights
+            yield images, gt_labels, gt_hms0, gt_hms1, gt_hms2, weights
 
     def test_generator(self, img_size=256, batch_size=16):
         images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
@@ -276,12 +285,14 @@ class DataGenerator:
             for i in range(next_size):
                 name = self.test_set[idx]
                 img = self.open_img(self.test_img_dir, name)
-                img = _pad_img(img)
-
+                
                 categories.append(self.test_data_dict[name]['category'])
                 offsets.append(_padding_offset(img.shape))
+                
                 names.append(name)
                 sizes.append(max(img.shape))
+                
+                img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 images[i] = img.astype(np.float32) / 255
                 idx += 1
