@@ -102,3 +102,7 @@ ENV/
 
 .idea/
 .vscode/
+data/
+data
+checkpoints/
+checkpoints

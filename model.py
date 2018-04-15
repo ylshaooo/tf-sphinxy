@@ -302,11 +302,11 @@ class SphinxModel:
             num_points += np.sum(w_valid == 1)
 
             out = self.Session.run(
-                self.output,
+                self.output[2],
                 {self.img: img_valid}
             )
 
-            batch_point_error = self._error_computation(out[2], lb_valid, hm2_valid, w_valid)
+            batch_point_error = self._error_computation(out, lb_valid, hm2_valid, w_valid)
             point_error += sum(batch_point_error)
         point_error = point_error / num_points
         print('--Avg. Point Error = %.2f%%' % (point_error * 100))
@@ -321,8 +321,8 @@ class SphinxModel:
             # Traversal the test set
             for _ in tqdm(range(len(self.dataset.test_set) // self.batch_size + 1)):
                 images, categories, offsets, names, sizes = next(test_gen)
-                prediction = self.Session.run(self.output, feed_dict={self.img: images})
-                hms = prediction[:, self.nStacks - 1, :, :, :]
+                prediction = self.Session.run(self.output[2], feed_dict={self.img: images})
+                hms = prediction
 
                 # Formatting to lines
                 for i in range(hms.shape[0]):
@@ -336,9 +336,9 @@ class SphinxModel:
                     for j in range(self.num_points):
                         if ut.VALID_POSITION[category][j] is 1:
                             # Calculate predictions from heat map
-                            index = np.unravel_index(hm[:, :, j].argmax(), (self.hm_size, self.hm_size))
+                            index = np.unravel_index(hm[:, :, j].argmax(), (self.img_size, self.img_size))
                             index = (index[1], index[0])
-                            point = np.array(index) / self.hm_size * size
+                            point = np.array(index) / self.img_size * size
                             point -= offset
                             write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
                         else:

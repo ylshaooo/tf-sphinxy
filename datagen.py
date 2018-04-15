@@ -54,14 +54,29 @@ def _padding_offset(shape):
     return offset
 
 
-def _augment(img, hm0, hm1, hm2, max_rotation=30):
-    # use rotation to do data augmentation
-    if random.choice([0, 1]):
+def _augment(img, hm0, hm1, hm2, max_rotation=30, max_translation=20, max_zoom=0.3):
+    # random data augmentation choices
+    augment_choice = random.choice([0, 1, 2, 3])
+    if augment_choice == 1:
         r_angle = np.random.randint(-1 * max_rotation, max_rotation)
         img = transform.rotate(img, r_angle, cval=255, preserve_range=True)
         hm0 = transform.rotate(hm0, r_angle)
         hm1 = transform.rotate(hm1, r_angle)
         hm2 = transform.rotate(hm2, r_angle)
+    else:
+        if augment_choice == 2:
+            translation_x = np.random.randint(-1 * max_translation, max_translation)
+            translation_y = np.random.randint(-1 * max_translation, max_translation)
+            warp_matrix = np.array([[1, 0, translation_x], [0, 1, translation_y], [0, 0, 1]])
+        if augment_choice == 3:
+            zoom_x = 1 + (np.random.rand(1) - 0.5) * 2 * max_zoom
+            zoom_y = 1 + (np.random.rand(1) - 0.5) * 2 * max_zoom
+            warp_matrix = np.array([[zoom_x, 0, 0], [0, zoom_y, 0], [0, 0, 1]])
+            
+        img = transform.warp(img, warp_matrix, cval=255, preserve_range=True)
+        hm0 = transform.warp(hm0, warp_matrix)
+        hm1 = transform.warp(hm1, warp_matrix)
+        hm2 = transform.warp(hm2, warp_matrix)
     return img, hm0, hm1, hm2
 
 
@@ -310,14 +325,14 @@ class DataGenerator:
         img = cv2.imread(os.path.join(img_dir, name))
         return img
 
-    def plot_img(self, name, plot='cv2'):
+    def plot_img(self, img_dir, name, plot='cv2'):
         """
         Plot an image
         :param name: Name of the Sample
         :param plot: Library to use (cv2: OpenCV, plt: matplotlib)
         :return:
         """
-        img = self.open_img(name)
+        img = self.open_img(img_dir, name)
         if plot == 'cv2':
             cv2.imshow('Image', img)
         elif plot == 'plt':
