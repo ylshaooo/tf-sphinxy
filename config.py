@@ -1,19 +1,27 @@
 class Config:
     # Dataset
+    is_top = True
     train_img_dir = 'data/train/Images'
     test_img_dir = 'data/test'
-    train_data_file = 'data/train/dataset.txt'
-    test_data_file = 'data/test/test.csv'
-    test_output_file = 'result.csv'
+    train_data_file = 'data/train/dataset_top.txt'
+    test_data_file = 'data/test/test_top.csv'
+    test_output_file = 'result_top.csv'
 
     # Network
     name = 'sphinx'
     img_size = 256
     hm_size = 64
+    out_size = 512
     num_classes = 5
     nFeats = 256
     nStacks = 8
     nLow = 4
+    top_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
+                  'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
+                  'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
+                  'hemline_left', 'hemline_right']
+    bottom_points = ['waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
+                     'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
     points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                    'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                    'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
@@ -23,14 +31,14 @@ class Config:
     # Train
     batch_size = 8
     nEpochs = 50
-    epoch_size = 4000
+    epoch_size = 2000
     learning_rate = 0.001
     learning_rate_decay = 0.96
-    decay_step = 2000
+    decay_step = 1000
     dropout_rate = 0.3
 
     # Validation
-    valid_iter = 360
+    valid_iter = 200
 
     # Saver
     logdir = 'logs'

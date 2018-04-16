@@ -54,30 +54,15 @@ def _padding_offset(shape):
     return offset
 
 
-def _augment(img, hm0, hm1, hm2, max_rotation=30, max_translation=20, max_zoom=0.3):
+def _augment(img, hms, max_rotation=30):
     # random data augmentation choices
-    augment_choice = random.choice([0, 1, 2, 3])
-    if augment_choice == 1:
+    if random.choice([0, 1]):
         r_angle = np.random.randint(-1 * max_rotation, max_rotation)
         img = transform.rotate(img, r_angle, cval=255, preserve_range=True)
-        hm0 = transform.rotate(hm0, r_angle)
-        hm1 = transform.rotate(hm1, r_angle)
-        hm2 = transform.rotate(hm2, r_angle)
-    else:
-        if augment_choice == 2:
-            translation_x = np.random.randint(-1 * max_translation, max_translation)
-            translation_y = np.random.randint(-1 * max_translation, max_translation)
-            warp_matrix = np.array([[1, 0, translation_x], [0, 1, translation_y], [0, 0, 1]])
-        if augment_choice == 3:
-            zoom_x = 1 + (np.random.rand(1) - 0.5) * 2 * max_zoom
-            zoom_y = 1 + (np.random.rand(1) - 0.5) * 2 * max_zoom
-            warp_matrix = np.array([[zoom_x, 0, 0], [0, zoom_y, 0], [0, 0, 1]])
-            
-        img = transform.warp(img, warp_matrix, cval=255, preserve_range=True)
-        hm0 = transform.warp(hm0, warp_matrix)
-        hm1 = transform.warp(hm1, warp_matrix)
-        hm2 = transform.warp(hm2, warp_matrix)
-    return img, hm0, hm1, hm2
+        hms[0] = transform.rotate(hms[0], r_angle)
+        hms[1] = transform.rotate(hms[1], r_angle)
+        hms[2] = transform.rotate(hms[2], r_angle)
+    return img, hms
 
 
 def _make_gaussian(hm_size, center, sigma=3):
@@ -107,14 +92,10 @@ class DataGenerator:
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
         """
-        if cfg.points_list is None:
-            self.points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
-                                'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
-                                'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
-                                'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
-                                'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
+        if cfg.is_top:
+            self.points_list = cfg.top_points
         else:
-            self.points_list = cfg.points_list
+            self.points_list = cfg.bottom_points
         self.label = {'blouse': 0, 'dress': 1, 'outwear': 2, 'skirt': 3, 'trousers': 4}
 
         self.train_img_dir = cfg.train_img_dir
@@ -222,10 +203,9 @@ class DataGenerator:
                 hm[:, :, i] = _make_gaussian(hm_size, (new_p[0], new_p[1]))
         return hm
 
-    def generator(self, img_size=256, hm_size=64, batch_size=16, num_classes=5, stacks=4, sample_set='train'):
+    def generator(self, img_size=256, hm_size=64, batch_size=16, stacks=4, sample_set='train'):
         """
         Batch Generator
-        :param num_classes: Number of classes
         :param hm_size: Size of heat map
         :param img_size: Size of image
         :param batch_size: Number of images per batch
@@ -234,11 +214,13 @@ class DataGenerator:
         """
         while True:
             images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
-            gt_labels = np.zeros((batch_size, num_classes), np.float32)
+            weights = np.zeros((batch_size, len(self.points_list)), np.int32)
+
+            # generate hm of different size
             gt_hms0 = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
             gt_hms1 = np.zeros((batch_size, hm_size * 2, hm_size * 2, len(self.points_list)), np.float32)
             gt_hms2 = np.zeros((batch_size, img_size, img_size, len(self.points_list)), np.float32)
-            weights = np.zeros((batch_size, len(self.points_list)), np.int32)
+            gt_hms3 = np.zeros((batch_size, img_size * 2, img_size * 2, len(self.points_list)), np.float32)
 
             i = 0
             keep_invisible = False
@@ -257,8 +239,6 @@ class DataGenerator:
                     keep_invisible = True
 
                 point = self.data_dict[name]['points']
-                label = self.data_dict[name]['label']
-                gt_labels[i] = _make_one_hot(label, num_classes)
                 weight = np.asarray(self.data_dict[name]['weight'])
                 weights[i] = weight
                 img = self.open_img(self.train_img_dir, name)
@@ -267,10 +247,12 @@ class DataGenerator:
                 hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible)
                 hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible)
                 hm2 = self._generate_hm(orig_size, img_size, new_p, weight, keep_invisible)
+                hm3 = self._generate_hm(orig_size, img_size * 2, new_p, weight, keep_invisible)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
-                    img, hm0, hm1, hm2 = _augment(img, hm0, hm1, hm2)
+                    img, hms = _augment(img, [hm0, hm1, hm2, hm3])
+                    hm0, hm1, hm2, hm3 = hms
                 images[i] = img.astype(np.float32) / 255
 
                 hm0 = np.expand_dims(hm0, axis=0)
@@ -278,8 +260,9 @@ class DataGenerator:
                 gt_hms0[i] = hm0
                 gt_hms1[i] = hm1
                 gt_hms2[i] = hm2
+                gt_hms3[i] = hm3
                 i = i + 1
-            yield images, gt_labels, gt_hms0, gt_hms1, gt_hms2, weights
+            yield images, gt_hms0, gt_hms1, gt_hms2, gt_hms3, weights
 
     def test_generator(self, img_size=256, batch_size=16):
         images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
@@ -300,13 +283,11 @@ class DataGenerator:
             for i in range(next_size):
                 name = self.test_set[idx]
                 img = self.open_img(self.test_img_dir, name)
-                
                 categories.append(self.test_data_dict[name]['category'])
                 offsets.append(_padding_offset(img.shape))
-                
                 names.append(name)
                 sizes.append(max(img.shape))
-                
+
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 images[i] = img.astype(np.float32) / 255

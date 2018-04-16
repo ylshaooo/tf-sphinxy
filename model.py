@@ -17,13 +17,19 @@ class SphinxModel:
     def __init__(self, cfg: Config, dataset: DataGenerator):
         self.img_size = cfg.img_size
         self.hm_size = cfg.hm_size
+        self.out_size = cfg.out_size
         self.nStacks = cfg.nStacks
         self.nFeats = cfg.nFeats
         self.nLow = cfg.nLow
         self.batch_size = cfg.batch_size
         self.num_classes = cfg.num_classes
-        self.points_list = cfg.points_list
-        self.num_points = len(self.points_list)
+        self.is_top = cfg.is_top
+        if self.is_top:
+            self.points = cfg.top_points
+        else:
+            self.points = cfg.bottom_points
+        self.num_points = len(self.points)
+        self.total_points = len(cfg.points_list)
         self.dropout_rate = cfg.dropout_rate
         self.learning_rate = cfg.learning_rate
         self.decay = cfg.learning_rate_decay
@@ -59,9 +65,10 @@ class SphinxModel:
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
                 self.gt_hm1 = tf.placeholder(tf.float32, (None, self.hm_size * 2, self.hm_size * 2, self.num_points))
                 self.gt_hm2 = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, self.num_points))
+                self.gt_hm3 = tf.placeholder(tf.float32, (None, self.out_size, self.out_size, self.num_points))
                 self.weight = tf.placeholder(tf.float32, (None, self.num_points))
         print('---Inputs : Done.')
-        self.output = self._graph_hourglass()
+        self.output = self._graph_sphinx()
         print('---Graph : Done.')
 
         end_time = time.time()
@@ -75,7 +82,8 @@ class SphinxModel:
             self.loss0 = tf.reduce_mean(self._weighted_loss(self.output[0], self.gt_hm0, 0), name='stack_loss')
             self.loss1 = tf.reduce_mean(self._weighted_loss(self.output[1], self.gt_hm1, 1), name='up1_loss')
             self.loss2 = tf.reduce_mean(self._weighted_loss(self.output[2], self.gt_hm2, 2), name='up2_loss')
-            self.loss = tf.add_n([self.loss0, self.loss1, self.loss2], name='total_loss')
+            self.loss3 = tf.reduce_mean(self._weighted_loss(self.output[3], self.gt_hm3, 3), name='up3_loss')
+            self.loss = tf.add_n([self.loss0, self.loss1, self.loss2, self.loss3], name='total_loss')
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
@@ -120,21 +128,24 @@ class SphinxModel:
             if step == 0:
                 weight = tf.expand_dims(weight, 1)
                 weight = tf.tile(weight, [1, self.nStacks, self.hm_size, self.hm_size, 1])
-            if step == 1:
+            elif step == 1:
                 weight = tf.tile(weight, [1, self.hm_size * 2, self.hm_size * 2, 1])
-            if step == 2:
+            elif step == 2:
                 weight = tf.tile(weight, [1, self.img_size, self.img_size, 1])
+            elif step == 3:
+                weight = tf.tile(weight, [1, self.out_size, self.out_size, 1])
+            else:
+                raise ValueError('Wrong up step of output.')
             loss = tf.multiply(loss, weight, name='weighted_out')
             return loss
 
-    def _error_computation(self, output, gt_label, gt_map, weight):
+    def _error_computation(self, output, gt_map, weight):
         # point distances for every image in batch
         batch_point_error = []
         for i in range(self.batch_size):
             batch_point_error.append(
                 self._error(
                     output[i, :, :, :],
-                    gt_label[i],
                     gt_map[i, :, :, :],
                     weight[i],
                 )
@@ -142,31 +153,27 @@ class SphinxModel:
 
         return batch_point_error
 
-    def _error(self, pred, gt_label, gt_map, weight):
+    def _error(self, pred, gt_map, weight):
         """
         Compute point error for each image and store in self.batch_point_error.
         :param pred: Heat map of shape (hm_size, hm_size, num_points)
-        :param gt_label: One hot label of shape: (num_classes,)
         :param gt_map: Ground truth heat map
         :param weight: Point weight
         """
         total_dist = 0.0
-        for i in range(len(self.points_list)):
+        for i in range(len(self.points)):
             if weight[i] == 1:
                 pred_idx = np.array(np.where(pred[:, :, i] == np.max(pred[:, :, i])))
                 gt_idx = np.array(np.where(gt_map[:, :, i] == np.max(gt_map[:, :, i])))
                 total_dist += np.linalg.norm(pred_idx - gt_idx)
 
         # select the normalization points
-        # label {0 1 2}: [5, 6]
-        # label {3 4}: [15, 16]
-        gt_label = np.argmax(gt_label)
-        if gt_label <= 2:
+        if self.is_top:
             norm_idx1 = np.array(np.where(gt_map[:, :, 5] == np.max(gt_map[:, :, 5])))
             norm_idx2 = np.array(np.where(gt_map[:, :, 6] == np.max(gt_map[:, :, 6])))
         else:
-            norm_idx1 = np.array(np.where(gt_map[:, :, 15] == np.max(gt_map[:, :, 15])))
-            norm_idx2 = np.array(np.where(gt_map[:, :, 16] == np.max(gt_map[:, :, 16])))
+            norm_idx1 = np.array(np.where(gt_map[:, :, 0] == np.max(gt_map[:, :, 0])))
+            norm_idx2 = np.array(np.where(gt_map[:, :, 1] == np.max(gt_map[:, :, 1])))
         norm_dist = np.linalg.norm(norm_idx2 - norm_idx1)
         return total_dist / norm_dist
 
@@ -203,13 +210,10 @@ class SphinxModel:
 
     def _train(self):
         start_time = time.time()
-        train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
-                                           self.num_classes, self.nStacks, 'train')
-        valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size,
-                                           self.num_classes, self.nStacks, 'valid')
+        train_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size, self.nStacks, 'train')
+        valid_gen = self.dataset.generator(self.img_size, self.hm_size, self.batch_size, self.nStacks, 'valid')
         self.resume['loss'] = []
         self.resume['point_error'] = []
-        # self.resume['label_error'] = []
         cost = 0.
         for epoch in range(self.start_epoch, self.nEpochs):
             self.is_training = True
@@ -230,7 +234,7 @@ class SphinxModel:
                 )
                 sys.stdout.flush()
 
-                img_train, _, hm0_train, hm1_train, hm2_train, w_train = next(train_gen)
+                img_train, hm0_train, hm1_train, hm2_train, hm3_train, w_train = next(train_gen)
                 if i % self.save_step == 0:
                     _, c, summary = self.Session.run(
                         [self.train_rmsprop, self.loss, self.train_op],
@@ -239,6 +243,7 @@ class SphinxModel:
                             self.gt_hm0: hm0_train,
                             self.gt_hm1: hm1_train,
                             self.gt_hm2: hm2_train,
+                            self.gt_hm3: hm3_train,
                             self.weight: w_train
                          }
                     )
@@ -253,6 +258,7 @@ class SphinxModel:
                             self.gt_hm0: hm0_train,
                             self.gt_hm1: hm1_train,
                             self.gt_hm2: hm2_train,
+                            self.gt_hm3: hm3_train,
                             self.weight: w_train
                         }
                     )
@@ -295,18 +301,17 @@ class SphinxModel:
         self.is_training = False
         point_error = 0
         num_points = 0
-        # correct_label = 0
         self.dataset.randomize('valid')
         for it in range(self.valid_iter):
-            img_valid, lb_valid, _, _, hm2_valid, w_valid = next(data_gen)
+            img_valid, _, _, _, hm3_valid, w_valid = next(data_gen)
             num_points += np.sum(w_valid == 1)
 
             out = self.Session.run(
-                self.output[2],
+                self.output[3],
                 {self.img: img_valid}
             )
 
-            batch_point_error = self._error_computation(out, lb_valid, hm2_valid, w_valid)
+            batch_point_error = self._error_computation(out, hm3_valid, w_valid)
             point_error += sum(batch_point_error)
         point_error = point_error / num_points
         print('--Avg. Point Error = %.2f%%' % (point_error * 100))
@@ -321,7 +326,7 @@ class SphinxModel:
             # Traversal the test set
             for _ in tqdm(range(len(self.dataset.test_set) // self.batch_size + 1)):
                 images, categories, offsets, names, sizes = next(test_gen)
-                prediction = self.Session.run(self.output[2], feed_dict={self.img: images})
+                prediction = self.Session.run(self.output[3], feed_dict={self.img: images})
                 hms = prediction
 
                 # Formatting to lines
@@ -333,19 +338,23 @@ class SphinxModel:
                     size = sizes[i]
 
                     write_line = [name, category]
-                    for j in range(self.num_points):
-                        if ut.VALID_POSITION[category][j] is 1:
-                            # Calculate predictions from heat map
-                            index = np.unravel_index(hm[:, :, j].argmax(), (self.img_size, self.img_size))
-                            index = (index[1], index[0])
-                            point = np.array(index) / self.img_size * size
-                            point -= offset
-                            write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
+                    cnt = 0
+                    for j in range(self.total_points):
+                        if ut.VALID_POINTS[self.is_top][j]:
+                            if ut.VALID_POSITION[category][j] == 1:
+                                index = np.unravel_index(hm[:, :, cnt].argmax(), (self.out_size, self.out_size))
+                                index = (index[1], index[0])
+                                point = np.array(index) / self.out_size * size
+                                point -= offset
+                                write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
+                            else:
+                                write_line.append('-1_-1_-1')
+                            cnt += 1
                         else:
                             write_line.append('-1_-1_-1')
                     spam_writer.writerow(write_line)
 
-    def _graph_hourglass(self):
+    def _graph_sphinx(self):
         with tf.name_scope('model'):
             net = ut.conv_layer(self.img, 64, 7, 2, name='conv1')
             net = ut.bottleneck(net, 128, stride=1, training=self.is_training, name='res1')
@@ -378,4 +387,6 @@ class SphinxModel:
                 up1 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_1')
                 net = ut.conv_layer_bn(up1, self.nFeats, 3, 1, self.is_training)
                 up2 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_2')
-            return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2
+                net = ut.conv_layer_bn(up2, self.nFeats, 3, 1, self.is_training)
+                up3 = ut.deconv_layer(net, self.num_points, 1, 2, name='up3')
+            return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2, up3
