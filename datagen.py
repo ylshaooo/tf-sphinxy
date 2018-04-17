@@ -62,6 +62,7 @@ def _augment(img, hms, max_rotation=30):
         hms[0] = transform.rotate(hms[0], r_angle)
         hms[1] = transform.rotate(hms[1], r_angle)
         hms[2] = transform.rotate(hms[2], r_angle)
+        hms[3] = transform.rotate(hms[3], r_angle)
     return img, hms
 
 
