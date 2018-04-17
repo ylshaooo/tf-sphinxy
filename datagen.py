@@ -188,7 +188,7 @@ class DataGenerator:
     # ---------------------------- Generating Methods --------------------------
 
     @staticmethod
-    def _generate_hm(orig_size, hm_size, points, weight, keep_invisible):
+    def _generate_hm(orig_size, hm_size, points, weight, keep_invisible, sigma=3):
         """
         Generate a full Heap Map for every points in an array
         :param orig_size: Size for the padded image
@@ -201,7 +201,7 @@ class DataGenerator:
         for i in range(num_points):
             if weight[i] == 1 or (weight[i] == 0 and keep_invisible):
                 new_p = (points[i] * hm_size / orig_size).astype(np.int32)
-                hm[:, :, i] = _make_gaussian(hm_size, (new_p[0], new_p[1]))
+                hm[:, :, i] = _make_gaussian(hm_size, (new_p[0], new_p[1]), sigma)
         return hm
 
     def generator(self, img_size=256, hm_size=64, batch_size=16, stacks=4, sample_set='train'):
@@ -245,10 +245,10 @@ class DataGenerator:
                 img = self.open_img(self.train_img_dir, name)
                 new_p = _relative_points(point, img.shape)
                 orig_size = max(img.shape)
-                hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible)
-                hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible)
-                hm2 = self._generate_hm(orig_size, img_size, new_p, weight, keep_invisible)
-                hm3 = self._generate_hm(orig_size, img_size * 2, new_p, weight, keep_invisible)
+                hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible, sigma=3)
+                hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible, sigma=6)
+                hm2 = self._generate_hm(orig_size, img_size, new_p, weight, keep_invisible, sigma=12)
+                hm3 = self._generate_hm(orig_size, img_size * 2, new_p, weight, keep_invisible, sigma=24)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
