@@ -11,7 +11,7 @@ class Config:
     name = 'sphinx'
     img_size = 256
     hm_size = 64
-    out_size = 512
+    out_rate = 8
     num_classes = 5
     nFeats = 256
     nStacks = 8
@@ -44,4 +44,4 @@ class Config:
     logdir = 'logs'
     save_step = 100
     saver_dir = 'checkpoints'
-    load = None
+    load = 'sphinx_12'

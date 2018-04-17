@@ -220,8 +220,8 @@ class DataGenerator:
             # generate hm of different size
             gt_hms0 = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
             gt_hms1 = np.zeros((batch_size, hm_size * 2, hm_size * 2, len(self.points_list)), np.float32)
-            gt_hms2 = np.zeros((batch_size, img_size, img_size, len(self.points_list)), np.float32)
-            gt_hms3 = np.zeros((batch_size, img_size * 2, img_size * 2, len(self.points_list)), np.float32)
+            gt_hms2 = np.zeros((batch_size, hm_size * 4, hm_size * 4, len(self.points_list)), np.float32)
+            gt_hms3 = np.zeros((batch_size, hm_size * 8, hm_size * 8, len(self.points_list)), np.float32)
 
             i = 0
             keep_invisible = False
@@ -247,8 +247,8 @@ class DataGenerator:
                 orig_size = max(img.shape)
                 hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible, sigma=3)
                 hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible, sigma=6)
-                hm2 = self._generate_hm(orig_size, img_size, new_p, weight, keep_invisible, sigma=12)
-                hm3 = self._generate_hm(orig_size, img_size * 2, new_p, weight, keep_invisible, sigma=24)
+                hm2 = self._generate_hm(orig_size, hm_size * 4, new_p, weight, keep_invisible, sigma=12)
+                hm3 = self._generate_hm(orig_size, hm_size * 8, new_p, weight, keep_invisible, sigma=24)
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':

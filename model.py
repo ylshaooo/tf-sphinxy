@@ -17,7 +17,7 @@ class SphinxModel:
     def __init__(self, cfg: Config, dataset: DataGenerator):
         self.img_size = cfg.img_size
         self.hm_size = cfg.hm_size
-        self.out_size = cfg.out_size
+        self.out_size = cfg.hm_size * cfg.out_rate
         self.nStacks = cfg.nStacks
         self.nFeats = cfg.nFeats
         self.nLow = cfg.nLow
@@ -64,7 +64,7 @@ class SphinxModel:
                 self.gt_hm0 = tf.placeholder(tf.float32,
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
                 self.gt_hm1 = tf.placeholder(tf.float32, (None, self.hm_size * 2, self.hm_size * 2, self.num_points))
-                self.gt_hm2 = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, self.num_points))
+                self.gt_hm2 = tf.placeholder(tf.float32, (None, self.hm_size * 4, self.hm_size * 4, self.num_points))
                 self.gt_hm3 = tf.placeholder(tf.float32, (None, self.out_size, self.out_size, self.num_points))
                 self.weight = tf.placeholder(tf.float32, (None, self.num_points))
         print('---Inputs : Done.')
@@ -131,7 +131,7 @@ class SphinxModel:
             elif step == 1:
                 weight = tf.tile(weight, [1, self.hm_size * 2, self.hm_size * 2, 1])
             elif step == 2:
-                weight = tf.tile(weight, [1, self.img_size, self.img_size, 1])
+                weight = tf.tile(weight, [1, self.hm_size * 4, self.hm_size * 4, 1])
             elif step == 3:
                 weight = tf.tile(weight, [1, self.out_size, self.out_size, 1])
             else:
@@ -206,7 +206,7 @@ class SphinxModel:
         else:
             self.saver.restore(self.Session, os.path.join(self.saver_dir, self.load))
         t_end = time.time()
-        print('Variable initialized in ' + str(int(t_end - t_start)) + ' sec.')
+        print('Variable initialized in %d sec.' % int(t_end - t_start))
 
     def _train(self):
         start_time = time.time()
@@ -221,7 +221,7 @@ class SphinxModel:
             avg_cost = 0.
             cost = 0.
             self.dataset.randomize()
-            print('Epoch :' + str(epoch + 1) + '/' + str(self.nEpochs) + '\n')
+            print('\nEpoch : %d/%d' % (epoch + 1, self.nEpochs))
 
             # Training Set
             for i in range(self.epoch_size):
@@ -265,13 +265,11 @@ class SphinxModel:
                 cost += c
                 avg_cost = cost / (i + 1)
             epoch_finish_time = time.time()
+            duration = epoch_finish_time - epoch_start_time
 
-            print('\nEpoch done in ' + str(int(epoch_finish_time - epoch_start_time)) +
-                  ' sec.' + ' -avg_time/batch: ' +
-                  str(((epoch_finish_time - epoch_start_time) / self.epoch_size))[:4] + ' sec.')
+            print('\nEpoch done in %d sec. -avg_time/batch: %.2f sec.' % (int(duration), duration / self.epoch_size))
             with tf.name_scope('save'):
-                self.saver.save(self.Session,
-                                os.path.join(self.saver_dir, str(self.name + '_' + str(epoch + 1))))
+                self.saver.save(self.Session, os.path.join(self.saver_dir, str(self.name + '_' + str(epoch + 1))))
             self.resume['loss'].append(cost)
 
             # Validation Set
