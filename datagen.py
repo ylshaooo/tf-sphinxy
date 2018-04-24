@@ -195,6 +195,7 @@ class DataGenerator:
         :param hm_size: Size for the heat map
         :param points: Array of points
         :param keep_invisible: True to keep invisible coordinates
+        :param sigma: Variance of Gaussian distribution
         """
         num_points = points.shape[0]
         hm = np.zeros((hm_size, hm_size, num_points), dtype=np.float32)
