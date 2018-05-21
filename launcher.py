@@ -2,9 +2,10 @@ import argparse
 import os
 
 from config import Config
-from datagen import DataGenerator
-from model import SphinxModel
-
+from preprocess.datagen import DataGenerator
+from models.sphinx import SphinxModel
+from scripts.test import Tester
+from scripts.train import Trainer
 
 def main():
     parser = argparse.ArgumentParser()
@@ -13,9 +14,19 @@ def main():
         default='train',
         help='mode of task: train/test'
     )
+    parser.add_argument(
+        '-d', '--devices',
+        default='-1',
+        help='gpus to use: "0", "1", or "0,1"'
+    )
     args = parser.parse_args()
     mode = args.mode
     assert mode in ['train', 'test'], 'invalid mode'
+
+    devices = args.devices
+    if devices != '-1':
+        os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+        os.environ['CUDA_VISIBLE_DEVICES'] = devices
 
     # load config
     cfg = Config()
@@ -23,16 +34,15 @@ def main():
     dataset = DataGenerator(cfg)
 
     dataset.generate_set(train=True if mode == 'train' else False)
-    model = SphinxModel(cfg, dataset)
+    model = SphinxModel(cfg)
+
     if mode == 'train':
-        model.generate_model(True)
-        model.training()
+        trainer = Trainer(model, cfg, dataset)
+        trainer.training()
     else:
-        model.generate_model(False)
-        model.inference()
+        tester = Tester(model, cfg, dataset)
+        tester.inference()
 
 
 if __name__ == '__main__':
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     main()

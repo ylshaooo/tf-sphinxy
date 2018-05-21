@@ -97,12 +97,18 @@ ENV/
 # mkdocs documentation
 /site
 
-# mypy
+# ide
 .mypy_cache/
-
 .idea/
 .vscode/
+
+# symbol links
 data/
 data
 checkpoints/
 checkpoints
+logs/
+logs
+
+# dataset
+*.csv

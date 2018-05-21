@@ -1,11 +1,11 @@
 class Config:
     # Dataset
-    is_top = True
+    is_top = False
     train_img_dir = 'data/train/Images'
     test_img_dir = 'data/test'
-    train_data_file = 'data/train/dataset_top.txt'
-    test_data_file = 'data/test/test_top.csv'
-    test_output_file = 'result_top.csv'
+    train_data_file = 'data/train/dataset_bottom.csv'
+    test_data_file = 'data/test/test_bottom.csv'
+    test_output_file = 'result_bottom.csv'
 
     # Network
     name = 'sphinx'
@@ -30,9 +30,9 @@ class Config:
 
     # Train
     batch_size = 8
-    nEpochs = 50
+    nEpochs = 5
     epoch_size = 2000
-    learning_rate = 0.001
+    learning_rate = 0.0003
     learning_rate_decay = 0.96
     decay_step = 1000
     dropout_rate = 0.3
@@ -44,4 +44,4 @@ class Config:
     logdir = 'logs'
     save_step = 100
     saver_dir = 'checkpoints'
-    load = 'sphinx_12'
+    load = 'sphinx_3'
