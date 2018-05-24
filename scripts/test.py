@@ -37,7 +37,7 @@ class Tester:
                 self._test()
                 
     def _init_variable(self):
-        assert(self.load is not None, 'Config "Load" must be specified.')
+        assert (self.load is not None), 'Config "Load" must be specified.'
         
         t_start = time.time()
         print('Variable initialization')

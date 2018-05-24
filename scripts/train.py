@@ -234,9 +234,9 @@ class Trainer:
             self.epoch_size * self.batch_size)
         print('  Final Loss: %.3f' % cost)
         print('  Relative Loss: %.2f%%' %
-            100 * self.resume['loss'][-1] / (self.resume['loss'][0] + 0.1))
+            (100 * self.resume['loss'][-1] / (self.resume['loss'][0] + 0.1)))
         print('  Relative Improvement - Point: %.2f%%' %
-            (self.resume['point_error'][0] - self.resume['point_error'][-1]) * 100)
+            ((self.resume['point_error'][0] - self.resume['point_error'][-1]) * 100))
         print('  Training Time: ' +
             str(datetime.timedelta(seconds=int(time.time() - start_time))))
 

@@ -165,10 +165,3 @@ VALID_POSITION = {
     'skirt': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0]),
     'trousers': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1]),
 }
-
-VALID_POINTS = [
-    # bottom points
-    np.logical_or(VALID_POSITION['skirt'], VALID_POSITION['trousers']),
-    # up points
-    np.logical_or(np.logical_or(VALID_POSITION['blouse'], VALID_POSITION['dress']), VALID_POSITION['outwear'])
-]
