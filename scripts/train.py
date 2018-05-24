@@ -33,11 +33,11 @@ class Trainer:
         self.num_classes = cfg.num_classes
 
         self.dataset = dataset
-        self.is_top = cfg.is_top
-        if self.is_top:
-            self.points = cfg.top_points
-        else:
-            self.points = cfg.bottom_points
+        self.category = cfg.category
+        self.points = []
+        for i in range(len(cfg.points_list)):
+            if ut.VALID_POSITION[self.category][i] == 1:
+                self.points.append(cfg.points_list[i])
         self.num_points = len(self.points)
 
         self.batch_size = cfg.batch_size
@@ -83,7 +83,6 @@ class Trainer:
                                          (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
             self.gt_hm1 = tf.placeholder(tf.float32, (None, self.hm_size * 2, self.hm_size * 2, self.num_points))
             self.gt_hm2 = tf.placeholder(tf.float32, (None, self.hm_size * 4, self.hm_size * 4, self.num_points))
-            self.gt_hm3 = tf.placeholder(tf.float32, (None, self.out_size, self.out_size, self.num_points))
             self.weight = tf.placeholder(tf.float32, (None, self.num_points))
         print('---Inputs : Done.')
         self.output = self.model.graph(self.img, self.is_training)
@@ -106,11 +105,8 @@ class Trainer:
             self.loss2 = tf.reduce_mean(ut.weighted_loss(
                 self.weight, self.nStacks, self.hm_size, self.out_size,
                 self.output[2], self.gt_hm2, 2), name='up2_loss')
-            self.loss3 = tf.reduce_mean(ut.weighted_loss(
-                self.weight, self.nStacks, self.hm_size, self.out_size,
-                self.output[3], self.gt_hm3, 3), name='up3_loss')
             self.loss = tf.add_n(
-                [self.loss0, self.loss1, self.loss2, self.loss3], name='total_loss')
+                [self.loss0, self.loss1, self.loss2], name='total_loss')
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
@@ -182,7 +178,7 @@ class Trainer:
                     ' -completion: ' + str(i + 1) + '/' + str(self.epoch_size)
                 )
                 sys.stdout.flush()
-                img_train, hm0_train, hm1_train, hm2_train, hm3_train, w_train = next(
+                img_train, hm0_train, hm1_train, hm2_train, w_train = next(
                     train_gen)
                 if i % self.save_step == 0:
                     _, c, summary = self.Session.run(
@@ -192,7 +188,6 @@ class Trainer:
                             self.gt_hm0: hm0_train,
                             self.gt_hm1: hm1_train,
                             self.gt_hm2: hm2_train,
-                            self.gt_hm3: hm3_train,
                             self.weight: w_train
                         }
                     )
@@ -208,7 +203,6 @@ class Trainer:
                             self.gt_hm0: hm0_train,
                             self.gt_hm1: hm1_train,
                             self.gt_hm2: hm2_train,
-                            self.gt_hm3: hm3_train,
                             self.weight: w_train
                         }
                     )
@@ -252,14 +246,14 @@ class Trainer:
         num_points = 0
         self.dataset.randomize('valid')
         for it in range(self.valid_iter):
-            img_valid, _, _, _, hm3_valid, w_valid = next(data_gen)
+            img_valid, _, _, hm2_valid, w_valid = next(data_gen)
             num_points += np.sum(w_valid == 1)
             out = self.Session.run(
-                self.output[3],
+                self.output[-1],
                 {self.img: img_valid}
             )
             batch_point_error = ut.error_computation(
-                self.batch_size, out, hm3_valid, w_valid, self.num_points, self.is_top)
+                self.batch_size, out, hm2_valid, w_valid, self.num_points, self.category)
             point_error += sum(batch_point_error)
         point_error = point_error / num_points
         print('--Avg. Point Error = %.2f%%' % (point_error * 100))

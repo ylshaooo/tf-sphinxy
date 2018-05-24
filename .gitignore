@@ -112,3 +112,6 @@ logs
 
 # dataset
 *.csv
+
+# system output data
+*.out

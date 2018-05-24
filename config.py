@@ -1,27 +1,21 @@
 class Config:
     # Dataset
-    is_top = False
-    train_img_dir = 'data/train/Images'
-    test_img_dir = 'data/test'
-    train_data_file = 'data/train/dataset_bottom.csv'
+    category = 'trousers'
+    train_img_dir = 'data/train/trousers/Images'
+    test_img_dir = 'data/test/trousers/Images'
+    train_data_file = 'data/train/trousers/points.txt'
     test_data_file = 'data/test/test_bottom.csv'
     test_output_file = 'result_bottom.csv'
 
     # Network
-    name = 'sphinx'
+    name = 'trousers'
     img_size = 256
     hm_size = 64
-    out_rate = 8
+    out_rate = 4
     num_classes = 5
     nFeats = 256
     nStacks = 8
     nLow = 4
-    top_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
-                  'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
-                  'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
-                  'hemline_left', 'hemline_right']
-    bottom_points = ['waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
-                     'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
     points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                    'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                    'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
@@ -30,18 +24,18 @@ class Config:
 
     # Train
     batch_size = 8
-    nEpochs = 5
-    epoch_size = 2000
-    learning_rate = 0.0003
+    nEpochs = 1
+    epoch_size = 1250
+    learning_rate = 0.01
     learning_rate_decay = 0.96
-    decay_step = 1000
+    decay_step = 600
     dropout_rate = 0.3
 
     # Validation
     valid_iter = 200
 
     # Saver
-    logdir = 'logs'
+    logdir = 'logs/trousers'
     save_step = 100
-    saver_dir = 'checkpoints'
-    load = 'sphinx_3'
+    saver_dir = 'checkpoints/trousers'
+    load = None

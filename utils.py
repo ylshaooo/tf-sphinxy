@@ -117,7 +117,7 @@ def weighted_loss(model_weight, nStacks, hm_size, out_size, logits, gt_hm, step)
 
 # ---------------------- Evaluation Utils -----------------------
 
-def error(num_points, is_top, pred, gt_map, weight):
+def error(num_points, pred, gt_map, weight, category):
     """
     Compute point error for each image and store in self.batch_point_error.
     :param pred: Heat map of shape (hm_size, hm_size, num_points)
@@ -131,7 +131,7 @@ def error(num_points, is_top, pred, gt_map, weight):
             gt_idx = np.array(np.where(gt_map[:, :, i] == np.max(gt_map[:, :, i])))
             total_dist += np.linalg.norm(pred_idx - gt_idx)
     # select the normalization points
-    if is_top:
+    if category in ['blouse', 'outwear', 'dress']:
         norm_idx1 = np.array(np.where(gt_map[:, :, 5] == np.max(gt_map[:, :, 5])))
         norm_idx2 = np.array(np.where(gt_map[:, :, 6] == np.max(gt_map[:, :, 6])))
     else:
@@ -140,17 +140,17 @@ def error(num_points, is_top, pred, gt_map, weight):
     norm_dist = np.linalg.norm(norm_idx2 - norm_idx1)
     return total_dist / norm_dist
 
-def error_computation(batch_size, output, gt_map, weight, num_points, is_top):
+def error_computation(batch_size, output, gt_map, weight, num_points, category):
     # point distances for every image in batch
     batch_point_error = []
     for i in range(batch_size):
         batch_point_error.append(
             error(
                 num_points,
-                is_top,
                 output[i, :, :, :],
                 gt_map[i, :, :, :],
                 weight[i],
+                category
             )
         )
     return batch_point_error

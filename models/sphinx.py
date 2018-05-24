@@ -11,11 +11,11 @@ class SphinxModel:
         self.nFeats = cfg.nFeats
         self.nLow = cfg.nLow
         
-        self.is_top = cfg.is_top
-        if self.is_top:
-            self.points = cfg.top_points
-        else:
-            self.points = cfg.bottom_points
+        self.category = cfg.category
+        self.points = []
+        for i in range(len(cfg.points_list)):
+            if ut.VALID_POSITION[self.category][i] == 1:
+                self.points.append(cfg.points_list[i])
         self.num_points = len(self.points)
         self.dropout_rate = cfg.dropout_rate
 
@@ -52,6 +52,4 @@ class SphinxModel:
                 up1 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_1')
                 net = ut.conv_layer_bn(up1, self.nFeats, 3, 1, is_training)
                 up2 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_2')
-                net = ut.conv_layer_bn(up2, self.nFeats, 3, 1, is_training)
-                up3 = ut.deconv_layer(net, self.num_points, 1, 2, name='up3')
-            return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2, up3
+            return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2
