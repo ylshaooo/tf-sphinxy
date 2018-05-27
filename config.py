@@ -2,10 +2,10 @@ class Config:
     # Dataset
     category = 'outwear'
     train_img_dir = 'data/train/' + category + '/Images'
-    test_img_dir = 'data/test/' + category + '/Images'
+    test_img_dir = 'data/test_a/' + category + '/Images'
     train_data_file = 'data/train/' + category + '/points.txt'
-    test_data_file = 'data/test/' + category + '/points.txt'
-    test_output_file = 'result_' + category + '.csv'
+    test_data_file = 'data/test_a/' + category + '/bbox.txt'
+    test_output_file = 'results/result_' + category + '.csv'
 
     # Network
     name = category
@@ -26,7 +26,7 @@ class Config:
     batch_size = 8
     nEpochs = 10
     epoch_size = 1250
-    learning_rate = 0.001
+    learning_rate = 0.003
     learning_rate_decay = 0.96
     decay_step = 600
     dropout_rate = 0.3
@@ -38,4 +38,4 @@ class Config:
     logdir = 'logs/' + category
     save_step = 100
     saver_dir = 'checkpoints/' + category
-    load = category + '_1'
+    load = category + '_10'

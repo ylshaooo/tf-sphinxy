@@ -16,12 +16,12 @@ class Tester:
         self.model = model
         self.dataset = dataset
 
+        self.category = cfg.category
         self.img_size = cfg.img_size
         self.hm_size = cfg.hm_size
         self.out_size = cfg.hm_size * cfg.out_rate
         self.nStacks = cfg.nStacks
         self.batch_size = cfg.batch_size
-        self.is_top = cfg.is_top
         self.total_points = len(cfg.points_list)
         self.load = cfg.load
         self.saver_dir = cfg.saver_dir
@@ -66,28 +66,24 @@ class Tester:
             spam_writer = csv.writer(outfile)
             # Traversal the test set
             for _ in tqdm(range(len(self.dataset.test_set) // self.batch_size + 1)):
-                images, categories, offsets, names, sizes = next(test_gen)
-                prediction = self.Session.run(self.output[3], feed_dict={self.img: images})
+                images, offsets, names, sizes = next(test_gen)
+                prediction = self.Session.run(self.output[-1], feed_dict={self.img: images})
                 hms = prediction
                 # Formatting to lines
                 for i in range(hms.shape[0]):
                     hm = hms[i]
                     offset = offsets[i]
-                    category = categories[i]
                     name = names[i]
                     size = sizes[i]
-                    write_line = [name, category]
+                    write_line = [name, self.category]
                     cnt = 0
                     for j in range(self.total_points):
-                        if ut.VALID_POINTS[self.is_top][j]:
-                            if ut.VALID_POSITION[category][j] == 1:
-                                index = np.unravel_index(hm[:, :, cnt].argmax(), (self.out_size, self.out_size))
-                                index = (index[1], index[0])
-                                point = np.array(index) / self.out_size * size
-                                point -= offset
-                                write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
-                            else:
-                                write_line.append('-1_-1_-1')
+                        if ut.VALID_POSITION[self.category][j] == 1:
+                            index = np.unravel_index(hm[:, :, cnt].argmax(), (self.out_size, self.out_size))
+                            index = (index[1], index[0])
+                            point = np.array(index) / self.out_size * size
+                            point -= offset
+                            write_line.append(str(int(round(point[0]))) + '_' + str(int(round(point[1]))) + '_1')
                             cnt += 1
                         else:
                             write_line.append('-1_-1_-1')

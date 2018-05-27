@@ -310,7 +310,7 @@ class DataGenerator:
                 img = self.open_img(self.test_img_dir, name, bound)
                 
                 # batching output
-                offsets.append(_padding_offset(img.shape))
+                offsets.append(np.array(_padding_offset(img.shape)) - bound[0:2])
                 names.append(name)
                 sizes.append(max(img.shape))
 
