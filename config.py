@@ -12,21 +12,19 @@ class Config:
     img_size = 256
     hm_size = 64
     out_rate = 8
-    num_classes = 5
     nFeats = 256
     nStacks = 8
     nLow = 4
+
     top_points = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
                   'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
                   'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
                   'hemline_left', 'hemline_right']
+
     bottom_points = ['waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
                      'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
-    points_list = ['neckline_left', 'neckline_right', 'center_front', 'shoulder_left', 'shoulder_right',
-                   'armpit_left', 'armpit_right', 'waistline_left', 'waistline_right', 'cuff_left_in',
-                   'cuff_left_out', 'cuff_right_in', 'cuff_right_out', 'top_hem_left', 'top_hem_right',
-                   'waistband_left', 'waistband_right', 'hemline_left', 'hemline_right', 'crotch',
-                   'bottom_left_in', 'bottom_left_out', 'bottom_right_in', 'bottom_right_out']
+
+    points_list = top_points + bottom_points
 
     # Train
     batch_size = 8

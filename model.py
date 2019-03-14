@@ -3,18 +3,16 @@ import datetime
 import os
 import sys
 import time
-from tqdm import tqdm
 
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
 import utils as ut
-from config import Config
-from datagen import DataGenerator
 
 
 class SphinxModel:
-    def __init__(self, cfg: Config, dataset: DataGenerator):
+    def __init__(self, cfg, dataset):
         self.img_size = cfg.img_size
         self.hm_size = cfg.hm_size
         self.out_size = cfg.hm_size * cfg.out_rate
@@ -22,7 +20,6 @@ class SphinxModel:
         self.nFeats = cfg.nFeats
         self.nLow = cfg.nLow
         self.batch_size = cfg.batch_size
-        self.num_classes = cfg.num_classes
         self.is_top = cfg.is_top
         if self.is_top:
             self.points = cfg.top_points
@@ -60,7 +57,6 @@ class SphinxModel:
         with tf.name_scope('inputs'):
             self.img = tf.placeholder(tf.float32, (None, self.img_size, self.img_size, 3))
             if train:
-                self.gt_label = tf.placeholder(tf.float32, (None, self.num_classes))
                 self.gt_hm0 = tf.placeholder(tf.float32,
                                              (None, self.nStacks, self.hm_size, self.hm_size, self.num_points))
                 self.gt_hm1 = tf.placeholder(tf.float32, (None, self.hm_size * 2, self.hm_size * 2, self.num_points))
@@ -87,26 +83,26 @@ class SphinxModel:
         print('---Loss : Done.')
 
         with tf.name_scope('steps'):
-            self.train_step = tf.Variable(0, name='global_step', trainable=False)
+            train_step = tf.Variable(0, name='global_step', trainable=False)
         with tf.name_scope('lr'):
-            self.lr = tf.train.exponential_decay(self.learning_rate, self.train_step, self.decay_step, self.decay,
+            lr = tf.train.exponential_decay(self.learning_rate, train_step, self.decay_step, self.decay,
                                                  staircase=True, name='learning_rate')
         print('---Learning Rate : Done.')
 
         with tf.name_scope('rmsprop'):
-            rmsprop = tf.train.RMSPropOptimizer(learning_rate=self.lr)
+            rmsprop = tf.train.RMSPropOptimizer(learning_rate=lr)
         print('---Optimizer : Done.')
         with tf.name_scope('minimizer'):
             update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
             with tf.control_dependencies(update_ops):
-                self.train_rmsprop = rmsprop.minimize(self.loss, self.train_step)
+                self.train_rmsprop = rmsprop.minimize(self.loss, train_step)
         print('---Minimizer : Done.')
         self.init = tf.global_variables_initializer()
         print('---Init : Done.')
 
         with tf.name_scope('training'):
             tf.summary.scalar('loss', self.loss, collections=['train'])
-            tf.summary.scalar('learning_rate', self.lr, collections=['train'])
+            tf.summary.scalar('learning_rate', lr, collections=['train'])
         with tf.name_scope('summary'):
             self.point_error = tf.placeholder(tf.float32)
             tf.summary.scalar('point_error', self.point_error, collections=['valid'])
@@ -386,5 +382,5 @@ class SphinxModel:
                 net = ut.conv_layer_bn(up1, self.nFeats, 3, 1, self.is_training)
                 up2 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_2')
                 net = ut.conv_layer_bn(up2, self.nFeats, 3, 1, self.is_training)
-                up3 = ut.deconv_layer(net, self.num_points, 1, 2, name='up3')
+                up3 = ut.deconv_layer(net, self.num_points, 1, 2, name='up_3')
             return tf.stack(stack_out, axis=1, name='stack_out'), up1, up2, up3
