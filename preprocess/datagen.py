@@ -7,9 +7,10 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 from skimage import transform
+from PIL import Image
 
 from config import Config
-
+import utils as ut
 
 # -------------------- Image Processing Utils --------------------
 
@@ -62,7 +63,6 @@ def _augment(img, hms, max_rotation=30):
         hms[0] = transform.rotate(hms[0], r_angle)
         hms[1] = transform.rotate(hms[1], r_angle)
         hms[2] = transform.rotate(hms[2], r_angle)
-        hms[3] = transform.rotate(hms[3], r_angle)
     return img, hms
 
 
@@ -84,6 +84,15 @@ def _make_one_hot(center, shape):
     one_hot[center] = 1
     return one_hot
 
+def _clamp_bound(path, bound):
+    im = Image.open(path)
+    orig_width, orig_height = im.size
+    
+    bound[0] = max(0, bound[0])
+    bound[1] = max(0, bound[1])
+    bound[2] = min(orig_width, bound[2])
+    bound[3] = min(orig_height, bound[3])    
+
 
 class DataGenerator:
     def __init__(self, cfg: Config):
@@ -93,11 +102,12 @@ class DataGenerator:
         :param img_dir: Directory of images
         :param train_data_file: Text file with training set data
         """
-        if cfg.is_top:
-            self.points_list = cfg.top_points
-        else:
-            self.points_list = cfg.bottom_points
-        self.label = {'blouse': 0, 'dress': 1, 'outwear': 2, 'skirt': 3, 'trousers': 4}
+
+        self.category = cfg.category
+        self.points_list = []
+        for i in range(len(cfg.points_list)):
+            if ut.VALID_POSITION[self.category][i] == 1:
+                self.points_list.append(cfg.points_list[i])
 
         self.train_img_dir = cfg.train_img_dir
         self.test_img_dir = cfg.test_img_dir
@@ -113,43 +123,45 @@ class DataGenerator:
         self.current_valid_index = 0
 
     def _create_train_table(self):
-        # Create Table of samples from TEXT file
+        # Create Table of samples from csv(txt) file
         self.train_table = []
         self.no_intel = []
         self.data_dict = {}
-        with open(self.train_data_file, 'r') as input_file:
+        
+        with open(self.train_data_file, newline='') as infile:
             print('READING TRAIN DATA')
-            for line in input_file:
-                line = line.strip()
-                line = line.split(' ')
-                name = line[0]
-                category = line[1]
-                label = self.label[category]
-                points = list(map(int, line[2:]))
-                if points == [-1] * len(points):
-                    self.no_intel.append(name)
-                else:
-                    points = np.reshape(points, (-1, 3))
-                    weight = points[:, 2]
-                    points = points[:, :2]
-                    self.data_dict[name] = {'points': points, 'label': label, 'weight': weight}
-                    self.train_table.append(name)
+            spamreader = csv.reader(infile, delimiter=' ')
+
+            for row in spamreader:
+                name = row[0]
+                bound = list(map(int, row[1:5]))
+                points = list(map(int, row[5:]))
+
+                points = np.reshape(points, (-1, 3))
+                weight = points[:, 2]
+                points = points[:, :2]
+                
+                _clamp_bound(os.path.join(self.train_img_dir, name), bound)
+
+                points[np.not_equal(weight, -1)] -= np.array(bound[0:2])
+                
+                self.data_dict[name] = {'points': points, 'bound': bound, 'weight': weight}
+                self.train_table.append(name)
 
     def _create_test_set(self):
         self.test_set = []
         self.test_data_dict = {}
-        with open(self.test_data_file, 'r') as input_file:
+        with open(self.test_data_file, newline='') as infile:
             print('READING TEST DATA')
-            spam_reader = csv.reader(input_file)
-            head = True
+            spam_reader = csv.reader(infile, delimiter=' ')
             for row in spam_reader:
-                if head:
-                    head = False
-                    continue
-
                 name = row[0]
+                bound = list(map(int, row[1:5]))
+                
+                _clamp_bound(os.path.join(self.test_img_dir, name), bound)
+                
+                self.test_data_dict[name] = {'bound': bound }
                 self.test_set.append(name)
-                self.test_data_dict[name] = {'category': row[1]}
         print('--Test set :', len(self.test_set), ' samples.')
 
     def randomize(self, dataset='train'):
@@ -222,11 +234,11 @@ class DataGenerator:
             gt_hms0 = np.zeros((batch_size, stacks, hm_size, hm_size, len(self.points_list)), np.float32)
             gt_hms1 = np.zeros((batch_size, hm_size * 2, hm_size * 2, len(self.points_list)), np.float32)
             gt_hms2 = np.zeros((batch_size, hm_size * 4, hm_size * 4, len(self.points_list)), np.float32)
-            gt_hms3 = np.zeros((batch_size, hm_size * 8, hm_size * 8, len(self.points_list)), np.float32)
 
             i = 0
             keep_invisible = False
             while i < batch_size:
+                # cycling indexing
                 if sample_set == 'train':
                     name = self.train_set[self.current_train_index]
                     self.current_train_index += 1
@@ -240,31 +252,40 @@ class DataGenerator:
                         self.current_valid_index = 0
                     keep_invisible = True
 
-                point = self.data_dict[name]['points']
-                weight = np.asarray(self.data_dict[name]['weight'])
-                weights[i] = weight
-                img = self.open_img(self.train_img_dir, name)
+                # fetch data
+                data = self.data_dict[name]
+                point = data['points']
+                weight = np.asarray(data['weight'])
+                bound = data['bound']
+                
+                # get cropped image
+                img = self.open_img(self.train_img_dir, name, bound)
                 new_p = _relative_points(point, img.shape)
+                
+                # generate hm
                 orig_size = max(img.shape)
                 hm0 = self._generate_hm(orig_size, hm_size, new_p, weight, keep_invisible, sigma=3)
                 hm1 = self._generate_hm(orig_size, hm_size * 2, new_p, weight, keep_invisible, sigma=6)
                 hm2 = self._generate_hm(orig_size, hm_size * 4, new_p, weight, keep_invisible, sigma=12)
-                hm3 = self._generate_hm(orig_size, hm_size * 8, new_p, weight, keep_invisible, sigma=24)
+                
+                # generate image
                 img = _pad_img(img)
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 if sample_set == 'train':
-                    img, hms = _augment(img, [hm0, hm1, hm2, hm3])
-                    hm0, hm1, hm2, hm3 = hms
-                images[i] = img.astype(np.float32) / 255
+                    img, hms = _augment(img, [hm0, hm1, hm2])
+                    hm0, hm1, hm2 = hms
 
+                # batching output
+                images[i] = img.astype(np.float32) / 255
                 hm0 = np.expand_dims(hm0, axis=0)
                 hm0 = np.repeat(hm0, stacks, axis=0)
                 gt_hms0[i] = hm0
                 gt_hms1[i] = hm1
                 gt_hms2[i] = hm2
-                gt_hms3[i] = hm3
+                weights[i] = weight
+                
                 i = i + 1
-            yield images, gt_hms0, gt_hms1, gt_hms2, gt_hms3, weights
+            yield images, gt_hms0, gt_hms1, gt_hms2, weights
 
     def test_generator(self, img_size=256, batch_size=16):
         images = np.zeros((batch_size, img_size, img_size, 3), np.float32)
@@ -283,10 +304,13 @@ class DataGenerator:
             names = []
             sizes = []
             for i in range(next_size):
+                # fetch data
                 name = self.test_set[idx]
-                img = self.open_img(self.test_img_dir, name)
-                categories.append(self.test_data_dict[name]['category'])
-                offsets.append(_padding_offset(img.shape))
+                bound = self.test_data_dict[name]['bound']
+                img = self.open_img(self.test_img_dir, name, bound)
+                
+                # batching output
+                offsets.append(np.array(_padding_offset(img.shape)) - bound[0:2])
                 names.append(name)
                 sizes.append(max(img.shape))
 
@@ -294,18 +318,21 @@ class DataGenerator:
                 img = cv2.resize(img, (img_size, img_size), interpolation=cv2.INTER_LINEAR)
                 images[i] = img.astype(np.float32) / 255
                 idx += 1
-            yield images, categories, offsets, names, sizes
+            yield images, offsets, names, sizes
 
     # ---------------------------- Image Reader --------------------------------
 
     @staticmethod
-    def open_img(img_dir, name):
+    def open_img(img_dir, name, bound=None):
         """
         Open an image
         :param img_dir: Directory of images
         :param name: Name of the sample
+        :param bound: The interested bound
         """
         img = cv2.imread(os.path.join(img_dir, name))
+        if bound is not None:
+            img = img[bound[1]:bound[3], bound[0]:bound[2]]
         return img
 
     def plot_img(self, img_dir, name, plot='cv2'):

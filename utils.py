@@ -95,6 +95,66 @@ def batch_norm(inputs, training=True):
 def dropout(inputs, rate, training=True, name='dropout'):
     return tf.layers.dropout(inputs, rate, training=training, name=name)
 
+def weighted_loss(model_weight, nStacks, hm_size, out_size, logits, gt_hm, step):
+    with tf.name_scope('weighted_loss_' + str(step)):
+        loss = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=gt_hm)
+        weight = tf.cast(tf.equal(model_weight, 1), tf.float32)
+        weight = tf.expand_dims(weight, 1)
+        weight = tf.expand_dims(weight, 1)
+        if step == 0:
+            weight = tf.expand_dims(weight, 1)
+            weight = tf.tile(weight, [1, nStacks, hm_size, hm_size, 1])
+        elif step == 1:
+            weight = tf.tile(weight, [1, hm_size * 2, hm_size * 2, 1])
+        elif step == 2:
+            weight = tf.tile(weight, [1, hm_size * 4, hm_size * 4, 1])
+        elif step == 3:
+            weight = tf.tile(weight, [1, out_size, out_size, 1])
+        else:
+            raise ValueError('Wrong up step of output.')
+        loss = tf.multiply(loss, weight, name='weighted_out')
+        return loss
+
+# ---------------------- Evaluation Utils -----------------------
+
+def error(num_points, pred, gt_map, weight, category):
+    """
+    Compute point error for each image and store in self.batch_point_error.
+    :param pred: Heat map of shape (hm_size, hm_size, num_points)
+    :param gt_map: Ground truth heat map
+    :param weight: Point weight
+    """
+    total_dist = 0.0
+    for i in range(num_points):
+        if weight[i] == 1:
+            pred_idx = np.array(np.where(pred[:, :, i] == np.max(pred[:, :, i])))
+            gt_idx = np.array(np.where(gt_map[:, :, i] == np.max(gt_map[:, :, i])))
+            total_dist += np.linalg.norm(pred_idx - gt_idx)
+    # select the normalization points
+    if category in ['blouse', 'outwear', 'dress']:
+        norm_idx1 = np.array(np.where(gt_map[:, :, 5] == np.max(gt_map[:, :, 5])))
+        norm_idx2 = np.array(np.where(gt_map[:, :, 6] == np.max(gt_map[:, :, 6])))
+    else:
+        norm_idx1 = np.array(np.where(gt_map[:, :, 0] == np.max(gt_map[:, :, 0])))
+        norm_idx2 = np.array(np.where(gt_map[:, :, 1] == np.max(gt_map[:, :, 1])))
+    norm_dist = np.linalg.norm(norm_idx2 - norm_idx1)
+    return total_dist / norm_dist
+
+def error_computation(batch_size, output, gt_map, weight, num_points, category):
+    # point distances for every image in batch
+    batch_point_error = []
+    for i in range(batch_size):
+        batch_point_error.append(
+            error(
+                num_points,
+                output[i, :, :, :],
+                gt_map[i, :, :, :],
+                weight[i],
+                category
+            )
+        )
+    return batch_point_error
+
 
 # ---------------------------- Other Utils --------------------------
 
@@ -105,10 +165,3 @@ VALID_POSITION = {
     'skirt': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0]),
     'trousers': np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 1, 1, 1]),
 }
-
-VALID_POINTS = [
-    # bottom points
-    np.logical_or(VALID_POSITION['skirt'], VALID_POSITION['trousers']),
-    # up points
-    np.logical_or(np.logical_or(VALID_POSITION['blouse'], VALID_POSITION['dress']), VALID_POSITION['outwear'])
-]

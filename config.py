@@ -1,16 +1,17 @@
 class Config:
     # Dataset
-    is_top = True
-    train_img_dir = 'data/train/Images'
-    test_img_dir = 'data/test'
-    train_data_file = 'data/train/dataset_top.txt'
-    test_data_file = 'data/test/test_top.csv'
-    test_output_file = 'result_top.csv'
+    category = 'outwear'
+    train_img_dir = 'data/train/' + category + '/Images'
+    test_img_dir = 'data/test_a/' + category + '/Images'
+    train_data_file = 'data/train/' + category + '/points.txt'
+    test_data_file = 'data/test_a/' + category + '/bbox.txt'
+    test_output_file = 'results/result_' + category + '.csv'
 
     # Network
-    name = 'sphinx'
+    name = category
     img_size = 256
     hm_size = 64
+
     out_rate = 8
     nFeats = 256
     nStacks = 8
@@ -28,18 +29,18 @@ class Config:
 
     # Train
     batch_size = 8
-    nEpochs = 50
-    epoch_size = 2000
-    learning_rate = 0.001
+    nEpochs = 10
+    epoch_size = 1250
+    learning_rate = 0.003
     learning_rate_decay = 0.96
-    decay_step = 1000
+    decay_step = 600
     dropout_rate = 0.3
 
     # Validation
     valid_iter = 200
 
     # Saver
-    logdir = 'logs'
+    logdir = 'logs/' + category
     save_step = 100
-    saver_dir = 'checkpoints'
-    load = 'sphinx_12'
+    saver_dir = 'checkpoints/' + category
+    load = category + '_10'
